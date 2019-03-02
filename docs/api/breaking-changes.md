@@ -59,6 +59,19 @@ these kinds of objects will throw a 'could not be cloned' error.
 
 [SCA]: https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm
 
+### `<webview>.getWebContents()`
+
+This API is implemented using the `remote` module, which has both performance
+and security implications. Therefore its usage should be explicit.
+
+```js
+// Deprecated
+webview.getWebContents()
+// Replace with
+const { remote } = require('electron')
+remote.webContents.fromId(webview.getWebContentsId())
+```
+
 ## Planned Breaking API Changes (7.0)
 
 ### Node Headers URL
