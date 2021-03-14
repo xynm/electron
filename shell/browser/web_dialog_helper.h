@@ -31,17 +31,17 @@ class WebDialogHelper {
   ~WebDialogHelper();
 
   void RunFileChooser(content::RenderFrameHost* render_frame_host,
-                      std::unique_ptr<content::FileSelectListener> listener,
+                      scoped_refptr<content::FileSelectListener> listener,
                       const blink::mojom::FileChooserParams& params);
   void EnumerateDirectory(content::WebContents* web_contents,
-                          std::unique_ptr<content::FileSelectListener> listener,
+                          scoped_refptr<content::FileSelectListener> listener,
                           const base::FilePath& path);
 
  private:
   NativeWindow* window_;
   bool offscreen_;
 
-  base::WeakPtrFactory<WebDialogHelper> weak_factory_;
+  base::WeakPtrFactory<WebDialogHelper> weak_factory_{this};
 
   DISALLOW_COPY_AND_ASSIGN(WebDialogHelper);
 };

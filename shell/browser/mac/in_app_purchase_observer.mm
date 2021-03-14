@@ -182,15 +182,15 @@ Transaction::Transaction() = default;
 Transaction::Transaction(const Transaction&) = default;
 Transaction::~Transaction() = default;
 
-TransactionObserver::TransactionObserver() : weak_ptr_factory_(this) {
-  obeserver_ = [[InAppTransactionObserver alloc]
+TransactionObserver::TransactionObserver() {
+  observer_ = [[InAppTransactionObserver alloc]
       initWithCallback:base::BindRepeating(
                            &TransactionObserver::OnTransactionsUpdated,
                            weak_ptr_factory_.GetWeakPtr())];
 }
 
 TransactionObserver::~TransactionObserver() {
-  [obeserver_ release];
+  [observer_ release];
 }
 
 }  // namespace in_app_purchase

@@ -15,18 +15,16 @@
 
 namespace electron {
 
-class AtomBrowserContext;
+class ElectronBrowserContext;
 
 // Sends cookie-change notifications on the UI thread.
 class CookieChangeNotifier : public network::mojom::CookieChangeListener {
  public:
-  explicit CookieChangeNotifier(AtomBrowserContext* browser_context);
+  explicit CookieChangeNotifier(ElectronBrowserContext* browser_context);
   ~CookieChangeNotifier() override;
 
   // Register callbacks that needs to notified on any cookie store changes.
-  std::unique_ptr<base::CallbackList<
-      void(const net::CookieChangeInfo& change)>::Subscription>
-  RegisterCookieChangeCallback(
+  base::CallbackListSubscription RegisterCookieChangeCallback(
       const base::Callback<void(const net::CookieChangeInfo& change)>& cb);
 
  private:
@@ -36,7 +34,7 @@ class CookieChangeNotifier : public network::mojom::CookieChangeListener {
   // network::mojom::CookieChangeListener implementation.
   void OnCookieChange(const net::CookieChangeInfo& change) override;
 
-  AtomBrowserContext* browser_context_;
+  ElectronBrowserContext* browser_context_;
   base::CallbackList<void(const net::CookieChangeInfo& change)>
       cookie_change_sub_list_;
 

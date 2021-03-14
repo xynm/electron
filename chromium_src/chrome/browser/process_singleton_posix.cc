@@ -56,7 +56,7 @@
 #include <stddef.h>
 
 #include "shell/browser/browser.h"
-#include "shell/common/atom_command_line.h"
+#include "shell/common/electron_command_line.h"
 
 #include "base/base_paths.h"
 #include "base/bind.h"
@@ -68,7 +68,6 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
@@ -334,7 +333,7 @@ bool IsChromeProcess(pid_t pid) {
 // A helper class to hold onto a socket.
 class ScopedSocket {
  public:
-  ScopedSocket() : fd_(-1) { Reset(); }
+  ScopedSocket() { Reset(); }
   ~ScopedSocket() { Close(); }
   int fd() { return fd_; }
   void Reset() {
@@ -348,7 +347,7 @@ class ScopedSocket {
   }
 
  private:
-  int fd_;
+  int fd_ = -1;
 };
 
 // Returns a random string for uniquifying profile connections.
@@ -361,7 +360,7 @@ bool CheckCookie(const base::FilePath& path, const base::FilePath& cookie) {
 }
 
 bool IsAppSandboxed() {
-#if defined(OS_MACOSX)
+#if defined(OS_MAC)
   // NB: There is no sane API for this, we have to just guess by
   // reading tea leaves
   base::FilePath home_dir;
@@ -372,7 +371,7 @@ bool IsAppSandboxed() {
   return home_dir.value().find("Library/Containers") != std::string::npos;
 #else
   return false;
-#endif  // defined(OS_MACOSX)
+#endif  // defined(OS_MAC)
 }
 
 bool ConnectSocket(ScopedSocket* socket,
@@ -422,7 +421,7 @@ bool ConnectSocket(ScopedSocket* socket,
   }
 }
 
-#if defined(OS_MACOSX)
+#if defined(OS_MAC)
 bool ReplaceOldSingletonLock(const base::FilePath& symlink_content,
                              const base::FilePath& lock_path) {
   // Try taking an flock(2) on the file. Failure means the lock is taken so we
@@ -448,14 +447,14 @@ bool ReplaceOldSingletonLock(const base::FilePath& symlink_content,
   // lock. We never flock() the lock file from now on. I.e. we assume that an
   // old version of Chrome will not run with the same user data dir after this
   // version has run.
-  if (!base::DeleteFile(lock_path, false)) {
+  if (!base::DeleteFile(lock_path)) {
     PLOG(ERROR) << "Could not delete old singleton lock.";
     return false;
   }
 
   return SymlinkPath(symlink_content, lock_path);
 }
-#endif  // defined(OS_MACOSX)
+#endif  // defined(OS_MAC)
 
 }  // namespace
 
@@ -474,10 +473,7 @@ class ProcessSingleton::LinuxWatcher
     SocketReader(ProcessSingleton::LinuxWatcher* parent,
                  scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
                  int fd)
-        : parent_(parent),
-          ui_task_runner_(ui_task_runner),
-          fd_(fd),
-          bytes_read_(0) {
+        : parent_(parent), ui_task_runner_(ui_task_runner), fd_(fd) {
       DCHECK_CURRENTLY_ON(BrowserThread::IO);
       // Wait for reads.
       fd_watch_controller_ = base::FileDescriptorWatcher::WatchReadable(
@@ -509,20 +505,20 @@ class ProcessSingleton::LinuxWatcher
         fd_watch_controller_;
 
     // The ProcessSingleton::LinuxWatcher that owns us.
-    ProcessSingleton::LinuxWatcher* const parent_;
+    ProcessSingleton::LinuxWatcher* const parent_ = nullptr;
 
     // A reference to the UI task runner.
     scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
 
     // The file descriptor we're reading.
-    const int fd_;
+    const int fd_ = -1;
 
     // Store the message in this buffer.
     char buf_[kMaxMessageLength];
 
     // Tracks the number of bytes we've read in case we're getting partial
     // reads.
-    size_t bytes_read_;
+    size_t bytes_read_ = 0;
 
     base::OneShotTimer timer_;
 
@@ -826,11 +822,10 @@ ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcessWithTimeout(
     return PROCESS_NONE;
   to_send.append(current_dir.value());
 
-  const std::vector<std::string>& argv = electron::AtomCommandLine::argv();
-  for (std::vector<std::string>::const_iterator it = argv.begin();
-       it != argv.end(); ++it) {
+  const std::vector<std::string>& argv = electron::ElectronCommandLine::argv();
+  for (const auto& arg : argv) {
     to_send.push_back(kTokenDelimiter);
-    to_send.append(*it);
+    to_send.append(arg);
   }
 
   // Send the message
@@ -971,7 +966,7 @@ bool ProcessSingleton::Create() {
   if (!SymlinkPath(symlink_content, lock_path_)) {
     // TODO(jackhou): Remove this case once this code is stable on Mac.
     // http://crbug.com/367612
-#if defined(OS_MACOSX)
+#if defined(OS_MAC)
     // On Mac, an existing non-symlink lock file means the lock could be held by
     // the old process singleton code. If we can successfully replace the lock,
     // continue as normal.

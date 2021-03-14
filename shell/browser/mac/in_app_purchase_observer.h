@@ -51,9 +51,9 @@ class TransactionObserver {
       const std::vector<Transaction>& transactions) = 0;
 
  private:
-  InAppTransactionObserver* obeserver_;
+  InAppTransactionObserver* observer_;
 
-  base::WeakPtrFactory<TransactionObserver> weak_ptr_factory_;
+  base::WeakPtrFactory<TransactionObserver> weak_ptr_factory_{this};
 
   DISALLOW_COPY_AND_ASSIGN(TransactionObserver);
 };

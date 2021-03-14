@@ -6,18 +6,16 @@
 #define SHELL_COMMON_GIN_CONVERTERS_BLINK_CONVERTER_H_
 
 #include "gin/converter.h"
+#include "third_party/blink/public/common/context_menu_data/context_menu_data.h"
+#include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/messaging/cloneable_message.h"
 #include "third_party/blink/public/common/web_cache/web_cache_resource_type_stats.h"
-#include "third_party/blink/public/platform/web_input_event.h"
-#include "third_party/blink/public/web/web_context_menu_data.h"
 
 namespace blink {
 class WebMouseEvent;
 class WebMouseWheelEvent;
 class WebKeyboardEvent;
-struct WebDeviceEmulationParams;
-struct WebFloatPoint;
-struct WebPoint;
+struct DeviceEmulationParams;
 struct WebSize;
 }  // namespace blink
 
@@ -55,20 +53,6 @@ struct Converter<blink::WebMouseWheelEvent> {
 };
 
 template <>
-struct Converter<blink::WebFloatPoint> {
-  static bool FromV8(v8::Isolate* isolate,
-                     v8::Local<v8::Value> val,
-                     blink::WebFloatPoint* out);
-};
-
-template <>
-struct Converter<blink::WebPoint> {
-  static bool FromV8(v8::Isolate* isolate,
-                     v8::Local<v8::Value> val,
-                     blink::WebPoint* out);
-};
-
-template <>
 struct Converter<blink::WebSize> {
   static bool FromV8(v8::Isolate* isolate,
                      v8::Local<v8::Value> val,
@@ -76,24 +60,24 @@ struct Converter<blink::WebSize> {
 };
 
 template <>
-struct Converter<blink::WebDeviceEmulationParams> {
+struct Converter<blink::DeviceEmulationParams> {
   static bool FromV8(v8::Isolate* isolate,
                      v8::Local<v8::Value> val,
-                     blink::WebDeviceEmulationParams* out);
+                     blink::DeviceEmulationParams* out);
 };
 
 template <>
-struct Converter<blink::WebContextMenuData::MediaType> {
+struct Converter<blink::mojom::ContextMenuDataMediaType> {
   static v8::Local<v8::Value> ToV8(
       v8::Isolate* isolate,
-      const blink::WebContextMenuData::MediaType& in);
+      const blink::mojom::ContextMenuDataMediaType& in);
 };
 
 template <>
-struct Converter<blink::WebContextMenuData::InputFieldType> {
+struct Converter<blink::mojom::ContextMenuDataInputFieldType> {
   static v8::Local<v8::Value> ToV8(
       v8::Isolate* isolate,
-      const blink::WebContextMenuData::InputFieldType& in);
+      const blink::mojom::ContextMenuDataInputFieldType& in);
 };
 
 template <>

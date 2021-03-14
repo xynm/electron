@@ -172,8 +172,6 @@ ProcessSingleton::ProcessSingleton(
     const base::FilePath& user_data_dir,
     const NotificationCallback& notification_callback)
     : notification_callback_(notification_callback),
-      is_virtualized_(false),
-      lock_file_(INVALID_HANDLE_VALUE),
       user_data_dir_(user_data_dir),
       should_kill_remote_process_callback_(
           base::BindRepeating(&TerminateAppWithError)) {
@@ -197,7 +195,7 @@ ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcess() {
     return PROCESS_NONE;
   }
 
-  switch (chrome::AttemptToNotifyRunningChrome(remote_window_, false)) {
+  switch (chrome::AttemptToNotifyRunningChrome(remote_window_)) {
     case chrome::NOTIFY_SUCCESS:
       return PROCESS_NOTIFIED;
     case chrome::NOTIFY_FAILED:

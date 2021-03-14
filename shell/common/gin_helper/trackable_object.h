@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/memory/weak_ptr.h"
+#include "shell/common/gin_helper/cleaned_up_at_exit.h"
 #include "shell/common/gin_helper/event_emitter.h"
 #include "shell/common/key_weak_map.h"
 
@@ -19,7 +20,7 @@ class SupportsUserData;
 namespace gin_helper {
 
 // Users should use TrackableObject instead.
-class TrackableObjectBase {
+class TrackableObjectBase : public CleanedUpAtExit {
  public:
   TrackableObjectBase();
 
@@ -33,7 +34,7 @@ class TrackableObjectBase {
   static int32_t GetIDFromWrappedClass(base::SupportsUserData* wrapped);
 
  protected:
-  virtual ~TrackableObjectBase();
+  ~TrackableObjectBase() override;
 
   // Returns a closure that can destroy the native class.
   base::OnceClosure GetDestroyClosure();
@@ -43,7 +44,7 @@ class TrackableObjectBase {
  private:
   void Destroy();
 
-  base::WeakPtrFactory<TrackableObjectBase> weak_factory_;
+  base::WeakPtrFactory<TrackableObjectBase> weak_factory_{this};
 
   DISALLOW_COPY_AND_ASSIGN(TrackableObjectBase);
 };
@@ -55,14 +56,17 @@ class TrackableObject : public TrackableObjectBase, public EventEmitter<T> {
  public:
   // Mark the JS object as destroyed.
   void MarkDestroyed() {
-    v8::Local<v8::Object> wrapper = mate::Wrappable<T>::GetWrapper();
+    v8::HandleScope scope(gin_helper::Wrappable<T>::isolate());
+    v8::Local<v8::Object> wrapper = gin_helper::Wrappable<T>::GetWrapper();
     if (!wrapper.IsEmpty()) {
       wrapper->SetAlignedPointerInInternalField(0, nullptr);
+      gin_helper::WrappableBase::wrapper_.ClearWeak();
     }
   }
 
   bool IsDestroyed() {
-    v8::Local<v8::Object> wrapper = mate::Wrappable<T>::GetWrapper();
+    v8::HandleScope scope(gin_helper::Wrappable<T>::isolate());
+    v8::Local<v8::Object> wrapper = gin_helper::Wrappable<T>::GetWrapper();
     return wrapper->InternalFieldCount() == 0 ||
            wrapper->GetAlignedPointerFromInternalField(0) == nullptr;
   }
@@ -72,6 +76,7 @@ class TrackableObject : public TrackableObjectBase, public EventEmitter<T> {
     if (!weak_map_)
       return nullptr;
 
+    v8::HandleScope scope(isolate);
     v8::MaybeLocal<v8::Object> object = weak_map_->Get(isolate, id);
     if (object.IsEmpty())
       return nullptr;
@@ -110,7 +115,7 @@ class TrackableObject : public TrackableObjectBase, public EventEmitter<T> {
   ~TrackableObject() override { RemoveFromWeakMap(); }
 
   void InitWith(v8::Isolate* isolate, v8::Local<v8::Object> wrapper) override {
-    mate::WrappableBase::InitWith(isolate, wrapper);
+    gin_helper::WrappableBase::InitWith(isolate, wrapper);
     if (!weak_map_) {
       weak_map_ = new electron::KeyWeakMap<int32_t>;
     }

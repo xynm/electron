@@ -51,6 +51,8 @@ The following methods are available on instances of `WebRequest`:
     * `url` String
     * `method` String
     * `webContentsId` Integer (optional)
+    * `webContents` WebContents (optional)
+    * `frame` WebFrameMain (optional)
     * `resourceType` String
     * `referrer` String
     * `timestamp` Double
@@ -94,6 +96,8 @@ Some examples of valid `urls`:
     * `url` String
     * `method` String
     * `webContentsId` Integer (optional)
+    * `webContents` WebContents (optional)
+    * `frame` WebFrameMain (optional)
     * `resourceType` String
     * `referrer` String
     * `timestamp` Double
@@ -121,6 +125,8 @@ The `callback` has to be called with a `response` object.
     * `url` String
     * `method` String
     * `webContentsId` Integer (optional)
+    * `webContents` WebContents (optional)
+    * `frame` WebFrameMain (optional)
     * `resourceType` String
     * `referrer` String
     * `timestamp` Double
@@ -141,12 +147,15 @@ response are visible by the time this listener is fired.
     * `url` String
     * `method` String
     * `webContentsId` Integer (optional)
+    * `webContents` WebContents (optional)
+    * `frame` WebFrameMain (optional)
     * `resourceType` String
     * `referrer` String
     * `timestamp` Double
     * `statusLine` String
     * `statusCode` Integer
-    * `responseHeaders` Record<string, string> (optional)
+    * `requestHeaders` Record<string, string>
+    * `responseHeaders` Record<string, string[]> (optional)
   * `callback` Function
     * `headersReceivedResponse` Object
       * `cancel` Boolean (optional)
@@ -172,10 +181,12 @@ The `callback` has to be called with a `response` object.
     * `url` String
     * `method` String
     * `webContentsId` Integer (optional)
+    * `webContents` WebContents (optional)
+    * `frame` WebFrameMain (optional)
     * `resourceType` String
     * `referrer` String
     * `timestamp` Double
-    * `responseHeaders` Record<string, string> (optional)
+    * `responseHeaders` Record<string, string[]> (optional)
     * `fromCache` Boolean - Indicates whether the response was fetched from disk
       cache.
     * `statusCode` Integer
@@ -196,6 +207,8 @@ and response headers are available.
     * `url` String
     * `method` String
     * `webContentsId` Integer (optional)
+    * `webContents` WebContents (optional)
+    * `frame` WebFrameMain (optional)
     * `resourceType` String
     * `referrer` String
     * `timestamp` Double
@@ -205,7 +218,7 @@ and response headers are available.
     * `ip` String (optional) - The server IP address that the request was
       actually sent to.
     * `fromCache` Boolean
-    * `responseHeaders` Record<string, string> (optional)
+    * `responseHeaders` Record<string, string[]> (optional)
 
 The `listener` will be called with `listener(details)` when a server initiated
 redirect is about to occur.
@@ -221,13 +234,16 @@ redirect is about to occur.
     * `url` String
     * `method` String
     * `webContentsId` Integer (optional)
+    * `webContents` WebContents (optional)
+    * `frame` WebFrameMain (optional)
     * `resourceType` String
     * `referrer` String
     * `timestamp` Double
-    * `responseHeaders` Record<string, string> (optional)
+    * `responseHeaders` Record<string, string[]> (optional)
     * `fromCache` Boolean
     * `statusCode` Integer
     * `statusLine` String
+    * `error` String
 
 The `listener` will be called with `listener(details)` when a request is
 completed.
@@ -243,6 +259,8 @@ completed.
     * `url` String
     * `method` String
     * `webContentsId` Integer (optional)
+    * `webContents` WebContents (optional)
+    * `frame` WebFrameMain (optional)
     * `resourceType` String
     * `referrer` String
     * `timestamp` Double

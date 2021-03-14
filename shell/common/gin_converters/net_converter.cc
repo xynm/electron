@@ -17,8 +17,10 @@
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/http_version.h"
+#include "net/url_request/redirect_info.h"
 #include "services/network/public/cpp/resource_request.h"
-#include "shell/browser/api/atom_api_data_pipe_holder.h"
+#include "shell/browser/api/electron_api_data_pipe_holder.h"
 #include "shell/common/gin_converters/gurl_converter.h"
 #include "shell/common/gin_converters/std_converter.h"
 #include "shell/common/gin_converters/value_converter.h"
@@ -160,7 +162,7 @@ v8::Local<v8::Value> Converter<net::HttpResponseHeaders*>::ToV8(
       base::Value* values = response_headers.FindListKey(key);
       if (!values)
         values = response_headers.SetKey(key, base::ListValue());
-      values->GetList().emplace_back(value);
+      values->Append(value);
     }
   }
   return ConvertToV8(isolate, response_headers);
@@ -184,7 +186,7 @@ bool Converter<net::HttpResponseHeaders*>::FromV8(
     }
     std::string value;
     gin::ConvertFromV8(isolate, localStrVal, &value);
-    out->AddHeader(key + ": " + value);
+    out->AddHeader(key, value);
     return true;
   };
 
@@ -253,18 +255,32 @@ v8::Local<v8::Value> Converter<network::ResourceRequestBody>::ToV8(
     const auto& element = elements[i];
     gin::Dictionary upload_data(isolate, v8::Object::New(isolate));
     switch (element.type()) {
-      case network::mojom::DataElementType::kFile:
-        upload_data.Set("file", element.path().value());
+      case network::mojom::DataElement::Tag::kFile: {
+        const auto& element_file = element.As<network::DataElementFile>();
+        upload_data.Set("type", "file");
+        upload_data.Set("file", element_file.path().value());
+        upload_data.Set("filePath",
+                        base::Value(element_file.path().AsUTF8Unsafe()));
+        upload_data.Set("offset", static_cast<int>(element_file.offset()));
+        upload_data.Set("length", static_cast<int>(element_file.length()));
+        upload_data.Set("modificationTime",
+                        element_file.expected_modification_time().ToDoubleT());
         break;
-      case network::mojom::DataElementType::kBytes:
-        upload_data.Set("bytes", node::Buffer::Copy(isolate, element.bytes(),
-                                                    element.length())
-                                     .ToLocalChecked());
+      }
+      case network::mojom::DataElement::Tag::kBytes: {
+        upload_data.Set("type", "rawData");
+        const auto& bytes = element.As<network::DataElementBytes>().bytes();
+        const char* data = reinterpret_cast<const char*>(bytes.data());
+        upload_data.Set(
+            "bytes",
+            node::Buffer::Copy(isolate, data, bytes.size()).ToLocalChecked());
         break;
-      case network::mojom::DataElementType::kDataPipe: {
+      }
+      case network::mojom::DataElement::Tag::kDataPipe: {
+        upload_data.Set("type", "blob");
         // TODO(zcbenz): After the NetworkService refactor, the old blobUUID API
-        // becomes unecessarily complex, we should deprecate the getBlobData API
-        // and return the DataPipeHolder wrapper directly.
+        // becomes unnecessarily complex, we should deprecate the getBlobData
+        // API and return the DataPipeHolder wrapper directly.
         auto holder = electron::api::DataPipeHolder::Create(isolate, element);
         upload_data.Set("blobUUID", holder->id());
         // The lifetime of data pipe is bound to the uploadData object.
@@ -324,10 +340,6 @@ bool Converter<scoped_refptr<network::ResourceRequestBody>>::FromV8(
                               static_cast<uint64_t>(offset),
                               static_cast<uint64_t>(length),
                               base::Time::FromDoubleT(modification_time));
-    } else if (type == "blob") {
-      std::string uuid;
-      dict->GetString("blobUUID", &uuid);
-      (*out)->AppendBlob(uuid);
     }
   }
   return true;
@@ -337,7 +349,7 @@ bool Converter<scoped_refptr<network::ResourceRequestBody>>::FromV8(
 v8::Local<v8::Value> Converter<network::ResourceRequest>::ToV8(
     v8::Isolate* isolate,
     const network::ResourceRequest& val) {
-  gin::Dictionary dict(isolate, v8::Object::New(isolate));
+  gin::Dictionary dict = gin::Dictionary::CreateEmpty(isolate);
   dict.Set("method", val.method);
   dict.Set("url", val.url.spec());
   dict.Set("referrer", val.referrer.spec());
@@ -354,8 +366,37 @@ v8::Local<v8::Value> Converter<electron::VerifyRequestParams>::ToV8(
   gin::Dictionary dict = gin::Dictionary::CreateEmpty(isolate);
   dict.Set("hostname", val.hostname);
   dict.Set("certificate", val.certificate);
+  dict.Set("validatedCertificate", val.validated_certificate);
   dict.Set("verificationResult", val.default_result);
   dict.Set("errorCode", val.error_code);
+  return ConvertToV8(isolate, dict);
+}
+
+// static
+v8::Local<v8::Value> Converter<net::HttpVersion>::ToV8(
+    v8::Isolate* isolate,
+    const net::HttpVersion& val) {
+  gin::Dictionary dict = gin::Dictionary::CreateEmpty(isolate);
+  dict.Set("major", static_cast<uint32_t>(val.major_value()));
+  dict.Set("minor", static_cast<uint32_t>(val.minor_value()));
+  return ConvertToV8(isolate, dict);
+}
+
+// static
+v8::Local<v8::Value> Converter<net::RedirectInfo>::ToV8(
+    v8::Isolate* isolate,
+    const net::RedirectInfo& val) {
+  gin::Dictionary dict = gin::Dictionary::CreateEmpty(isolate);
+
+  dict.Set("statusCode", val.status_code);
+  dict.Set("newMethod", val.new_method);
+  dict.Set("newUrl", val.new_url);
+  dict.Set("newSiteForCookies", val.new_site_for_cookies.RepresentativeUrl());
+  dict.Set("newReferrer", val.new_referrer);
+  dict.Set("insecureSchemeWasUpgraded", val.insecure_scheme_was_upgraded);
+  dict.Set("isSignedExchangeFallbackRedirect",
+           val.is_signed_exchange_fallback_redirect);
+
   return ConvertToV8(isolate, dict);
 }
 

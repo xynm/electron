@@ -3,12 +3,14 @@ From: Cheng Zhao <zcbenz@gmail.com>
 Date: Thu, 20 Sep 2018 17:47:44 -0700
 Subject: gin_enable_disable_v8_platform.patch
 
+We don't use gin to create the V8 platform, because we need to inject Node
+things.
 
 diff --git a/gin/isolate_holder.cc b/gin/isolate_holder.cc
-index 5f8aea7105a188846fd48d199bb4e0ca2017a0ab..2514f591208372d6654ff9c5be50a51a39a881cb 100644
+index 73435b1c2c008a376421f8c94059fdb61d58feed..9ded78a8fd05bf4278c9800fcd0cdea6cefa2ac8 100644
 --- a/gin/isolate_holder.cc
 +++ b/gin/isolate_holder.cc
-@@ -98,9 +98,10 @@ IsolateHolder::~IsolateHolder() {
+@@ -105,9 +105,10 @@ IsolateHolder::~IsolateHolder() {
  // static
  void IsolateHolder::Initialize(ScriptMode mode,
                                 v8::ArrayBuffer::Allocator* allocator,
@@ -36,10 +38,10 @@ index f23af2d9738f3aa76e3a49301e1c3216ee4a64b4..ede178acabc63c3c33d6ce93efd5632b
    v8::Isolate* isolate() { return isolate_; }
  
 diff --git a/gin/v8_initializer.cc b/gin/v8_initializer.cc
-index 9298a9c75540d40133a8fc58c128aea521f3a37c..9474b26eba6d9c41162a197e11d6a871a2dd0259 100644
+index ac74939f36630673c4ee9db02bef320f17c86154..3dd0f2be0be9ac5194523333aa0d822eaa9eb814 100644
 --- a/gin/v8_initializer.cc
 +++ b/gin/v8_initializer.cc
-@@ -190,12 +190,14 @@ enum LoadV8FileResult {
+@@ -198,12 +198,14 @@ enum LoadV8FileResult {
  }  // namespace
  
  // static

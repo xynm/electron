@@ -1,15 +1,18 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: deepak1556 <hop2deep@gmail.com>
-Date: Wed, 23 Oct 2019 15:30:18 -0700
+From: Shelley Vohr <shelley.vohr@gmail.com>
+Date: Tue, 4 Feb 2020 08:59:32 -0700
 Subject: Revert "Remove ContentRendererClient::ShouldFork."
 
-This reverts commit 6b068eb8ca4a3c7350bdafa22fc0cf0636ef8b74.
+This reverts the CL at https://chromium-review.googlesource.com/c/chromium/src/+/1812128.
+We use it to force a new renderer process for navigations, and need to start a new renderer process
+for every navigation to keep Node.js working properly. Once Native Modules in the renderer process
+are required to be NAPI or context aware (Electron v11), this patch can be removed.
 
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
-index 5a7ec36dea7b63ea4e93911bd7685e2ca02d6800..97f64db04fb7dcd29ac9b1310e41c2b6ebd8b0c4 100644
+index 092cb7aa6b5d1e2b516569eae8b9dabed6661dfc..963196951c0dce346220c11287ceeab32fec2e32 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
-@@ -1227,6 +1227,25 @@ bool ChromeContentRendererClient::AllowPopup() {
+@@ -1266,6 +1266,25 @@ ChromeContentRendererClient::GetProtocolHandlerSecurityLevel() {
  #endif
  }
  
@@ -36,10 +39,10 @@ index 5a7ec36dea7b63ea4e93911bd7685e2ca02d6800..97f64db04fb7dcd29ac9b1310e41c2b6
      WebLocalFrame* frame,
      ui::PageTransition transition_type,
 diff --git a/chrome/renderer/chrome_content_renderer_client.h b/chrome/renderer/chrome_content_renderer_client.h
-index 63be9235f7f6c66f49698ec05fed8581caaddac5..d306846f872ee27a07a67f80fc4dd8740458e47c 100644
+index 30718f6b057fcca8eef7516cb48720c4137c3cb4..7a1f4ad8e73cf141ac7c60a9aced2b81cbc61812 100644
 --- a/chrome/renderer/chrome_content_renderer_client.h
 +++ b/chrome/renderer/chrome_content_renderer_client.h
-@@ -137,6 +137,11 @@ class ChromeContentRendererClient
+@@ -122,6 +122,11 @@ class ChromeContentRendererClient
        base::SingleThreadTaskRunner* compositor_thread_task_runner) override;
    bool RunIdleHandlerWhenWidgetsHidden() override;
    bool AllowPopup() override;
@@ -48,14 +51,14 @@ index 63be9235f7f6c66f49698ec05fed8581caaddac5..d306846f872ee27a07a67f80fc4dd874
 +                  const std::string& http_method,
 +                  bool is_initial_navigation,
 +                  bool is_server_redirect) override;
+   blink::ProtocolHandlerSecurityLevel GetProtocolHandlerSecurityLevel()
+       override;
    void WillSendRequest(blink::WebLocalFrame* frame,
-                        ui::PageTransition transition_type,
-                        const blink::WebURL& url,
 diff --git a/content/public/renderer/content_renderer_client.cc b/content/public/renderer/content_renderer_client.cc
-index ccd9c50b299b00936cce032b842e509eeb157ab0..ed275b4ab86fdad2af974746841111c7c231c04c 100644
+index 18e13633bc5f2be2830f6c10f4a46783c57720d4..e9123e07996f511e66ce23e28bcfc2f8ecedd6c5 100644
 --- a/content/public/renderer/content_renderer_client.cc
 +++ b/content/public/renderer/content_renderer_client.cc
-@@ -105,6 +105,14 @@ bool ContentRendererClient::HandleNavigation(
+@@ -117,6 +117,14 @@ bool ContentRendererClient::HandleNavigation(
  }
  #endif
  
@@ -67,14 +70,14 @@ index ccd9c50b299b00936cce032b842e509eeb157ab0..ed275b4ab86fdad2af974746841111c7
 +  return false;
 +}
 +
- void ContentRendererClient::WillSendRequest(blink::WebLocalFrame* frame,
-                                             ui::PageTransition transition_type,
-                                             const blink::WebURL& url,
+ void ContentRendererClient::WillSendRequest(
+     blink::WebLocalFrame* frame,
+     ui::PageTransition transition_type,
 diff --git a/content/public/renderer/content_renderer_client.h b/content/public/renderer/content_renderer_client.h
-index a05cef66facd477057fedb388e4000475bc76830..906920393c34043d19183064a2a4506c0a03e80d 100644
+index 357df68c64071ef7dca98ce4aab885dd936b1c49..f501a2ab0bd6d4664dad13913671c4d7d5a96c1e 100644
 --- a/content/public/renderer/content_renderer_client.h
 +++ b/content/public/renderer/content_renderer_client.h
-@@ -212,6 +212,13 @@ class CONTENT_EXPORT ContentRendererClient {
+@@ -210,6 +210,13 @@ class CONTENT_EXPORT ContentRendererClient {
                                  bool is_redirect);
  #endif
  
@@ -87,15 +90,23 @@ index a05cef66facd477057fedb388e4000475bc76830..906920393c34043d19183064a2a4506c
 +
    // Notifies the embedder that the given frame is requesting the resource at
    // |url|. If the function returns a valid |new_url|, the request must be
-   // updated to use it. The |attach_same_site_cookies| output parameter
+   // updated to use it.
 diff --git a/content/renderer/render_frame_impl.cc b/content/renderer/render_frame_impl.cc
-index cbfec3c07d6e6bab8b77f9e6f9f9baf1e6ae4072..e93de34708dea401c6154282a410adc0abab46e4 100644
+index 49b0d9012c43661a4fb4b9b8b8a68c156c7a76b6..db038990188455fc645c3c769a71e01af1ad3f0b 100644
 --- a/content/renderer/render_frame_impl.cc
 +++ b/content/renderer/render_frame_impl.cc
-@@ -6236,6 +6236,15 @@ void RenderFrameImpl::BeginNavigation(
-     int cumulative_bindings = RenderProcess::current()->GetEnabledBindings();
+@@ -5313,6 +5313,23 @@ void RenderFrameImpl::BeginNavigation(
+     // we can do a per-frame check here rather than a process-wide check.
      bool should_fork = HasWebUIScheme(url) || HasWebUIScheme(old_url) ||
-                        (cumulative_bindings & kWebUIBindingsPolicyMask);
+                        (enabled_bindings_ & kWebUIBindingsPolicyMask);
++
++    if (!should_fork && url.SchemeIs(url::kFileScheme)) {
++      // Fork non-file to file opens (see https://crbug.com/1031119).  Note that
++      // this may fork unnecessarily if another tab (hosting a file or not)
++      // targeted this one before its initial navigation, but that shouldn't
++      // cause a problem.
++      should_fork = !old_url.SchemeIs(url::kFileScheme);
++    }
 +
 +    if (!should_fork) {
 +      // Give the embedder a chance.
@@ -108,81 +119,3 @@ index cbfec3c07d6e6bab8b77f9e6f9f9baf1e6ae4072..e93de34708dea401c6154282a410adc0
      if (should_fork) {
        OpenURL(std::move(info));
        return;  // Suppress the load here.
-diff --git a/content/renderer/render_view_browsertest.cc b/content/renderer/render_view_browsertest.cc
-index b8c9f30a3492696bf3f2eb1996e54f09b8ef32a3..913eadc2b3faf21ca579ca094a0e90ecade246c7 100644
---- a/content/renderer/render_view_browsertest.cc
-+++ b/content/renderer/render_view_browsertest.cc
-@@ -989,6 +989,73 @@ TEST_F(RenderViewImplTest, BeginNavigationForWebUI) {
-       FrameHostMsg_OpenURL::ID));
- }
- 
-+class AlwaysForkingRenderViewTest : public RenderViewImplTest {
-+ public:
-+  ContentRendererClient* CreateContentRendererClient() override {
-+    return new TestContentRendererClient;
-+  }
-+
-+ private:
-+  class TestContentRendererClient : public ContentRendererClient {
-+   public:
-+    bool ShouldFork(blink::WebLocalFrame* frame,
-+                    const GURL& url,
-+                    const std::string& http_method,
-+                    bool is_initial_navigation,
-+                    bool is_server_redirect) override {
-+      return true;
-+    }
-+  };
-+};
-+
-+TEST_F(AlwaysForkingRenderViewTest, BeginNavigationDoesNotForkEmptyUrl) {
-+  GURL example_url("http://example.com");
-+  GURL empty_url("");
-+
-+  LoadHTMLWithUrlOverride("<body></body", example_url.spec().c_str());
-+  EXPECT_EQ(example_url,
-+            GURL(frame()->GetWebFrame()->GetDocumentLoader()->GetUrl()));
-+
-+  // Empty url should never fork.
-+  blink::WebURLRequest request(empty_url);
-+  request.SetMode(network::mojom::RequestMode::kNavigate);
-+  request.SetRedirectMode(network::mojom::RedirectMode::kManual);
-+  request.SetRequestContext(blink::mojom::RequestContextType::INTERNAL);
-+  request.SetRequestorOrigin(blink::WebSecurityOrigin::Create(example_url));
-+  auto navigation_info = std::make_unique<blink::WebNavigationInfo>();
-+  navigation_info->url_request = request;
-+  navigation_info->frame_type =
-+      network::mojom::RequestContextFrameType::kTopLevel;
-+  navigation_info->navigation_policy = blink::kWebNavigationPolicyCurrentTab;
-+  frame()->BeginNavigation(std::move(navigation_info));
-+  EXPECT_FALSE(render_thread_->sink().GetUniqueMessageMatching(
-+      FrameHostMsg_OpenURL::ID));
-+}
-+
-+TEST_F(AlwaysForkingRenderViewTest, BeginNavigationDoesNotForkAboutBlank) {
-+  GURL example_url("http://example.com");
-+  GURL blank_url(url::kAboutBlankURL);
-+
-+  LoadHTMLWithUrlOverride("<body></body", example_url.spec().c_str());
-+  EXPECT_EQ(example_url,
-+            GURL(frame()->GetWebFrame()->GetDocumentLoader()->GetUrl()));
-+
-+  // about:blank should never fork.
-+  blink::WebURLRequest request(blank_url);
-+  request.SetMode(network::mojom::RequestMode::kNavigate);
-+  request.SetRedirectMode(network::mojom::RedirectMode::kManual);
-+  request.SetRequestContext(blink::mojom::RequestContextType::INTERNAL);
-+  request.SetRequestorOrigin(blink::WebSecurityOrigin::Create(example_url));
-+  auto navigation_info = std::make_unique<blink::WebNavigationInfo>();
-+  navigation_info->url_request = request;
-+  navigation_info->frame_type =
-+      network::mojom::RequestContextFrameType::kTopLevel;
-+  navigation_info->navigation_policy = blink::kWebNavigationPolicyCurrentTab;
-+  frame()->BeginNavigation(std::move(navigation_info));
-+  EXPECT_FALSE(render_thread_->sink().GetUniqueMessageMatching(
-+      FrameHostMsg_OpenURL::ID));
-+}
-+
- // This test verifies that when device emulation is enabled, RenderFrameProxy
- // continues to receive the original ScreenInfo and not the emualted
- // ScreenInfo.

@@ -14,6 +14,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/optional.h"
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
 #include "base/values.h"
@@ -44,10 +45,10 @@ class PersistentDictionary;
 
 namespace electron {
 
-class AtomMenuModel;
+class ElectronMenuModel;
 class NativeBrowserView;
 
-#if defined(OS_MACOSX)
+#if defined(OS_MAC)
 typedef NSView* NativeWindowHandle;
 #else
 typedef gfx::AcceleratedWidget NativeWindowHandle;
@@ -148,7 +149,9 @@ class NativeWindow : public base::SupportsUserData,
   virtual bool IsSimpleFullScreen() = 0;
   virtual void SetKiosk(bool kiosk) = 0;
   virtual bool IsKiosk() = 0;
+  virtual bool IsTabletMode() const;
   virtual void SetBackgroundColor(SkColor color) = 0;
+  virtual SkColor GetBackgroundColor() = 0;
   virtual void SetHasShadow(bool has_shadow) = 0;
   virtual bool HasShadow() = 0;
   virtual void SetOpacity(const double opacity) = 0;
@@ -160,10 +163,11 @@ class NativeWindow : public base::SupportsUserData,
   virtual void SetIgnoreMouseEvents(bool ignore, bool forward) = 0;
   virtual void SetContentProtection(bool enable) = 0;
   virtual void SetFocusable(bool focusable);
-  virtual void SetMenu(AtomMenuModel* menu);
+  virtual void SetMenu(ElectronMenuModel* menu);
   virtual void SetParentWindow(NativeWindow* parent);
   virtual void AddBrowserView(NativeBrowserView* browser_view) = 0;
   virtual void RemoveBrowserView(NativeBrowserView* browser_view) = 0;
+  virtual void SetTopBrowserView(NativeBrowserView* browser_view) = 0;
   virtual content::DesktopMediaID GetDesktopMediaID() const = 0;
   virtual gfx::NativeView GetNativeView() const = 0;
   virtual gfx::NativeWindow GetNativeWindow() const = 0;
@@ -184,8 +188,10 @@ class NativeWindow : public base::SupportsUserData,
                               const std::string& description) = 0;
 
   // Workspace APIs.
-  virtual void SetVisibleOnAllWorkspaces(bool visible,
-                                         bool visibleOnFullScreen = false) = 0;
+  virtual void SetVisibleOnAllWorkspaces(
+      bool visible,
+      bool visibleOnFullScreen = false,
+      bool skipTransformProcessType = false) = 0;
 
   virtual bool IsVisibleOnAllWorkspaces() = 0;
 
@@ -193,6 +199,15 @@ class NativeWindow : public base::SupportsUserData,
 
   // Vibrancy API
   virtual void SetVibrancy(const std::string& type);
+
+  // Traffic Light API
+#if defined(OS_MAC)
+  virtual void SetWindowButtonVisibility(bool visible) = 0;
+  virtual bool GetWindowButtonVisibility() const = 0;
+  virtual void SetTrafficLightPosition(base::Optional<gfx::Point> position) = 0;
+  virtual base::Optional<gfx::Point> GetTrafficLightPosition() const = 0;
+  virtual void RedrawTrafficLights() = 0;
+#endif
 
   // Touchbar API
   virtual void SetTouchBar(std::vector<gin_helper::PersistentDictionary> items);
@@ -206,9 +221,6 @@ class NativeWindow : public base::SupportsUserData,
   virtual void MoveTabToNewWindow();
   virtual void ToggleTabBar();
   virtual bool AddTabbedWindow(NativeWindow* window);
-
-  // Returns false if unsupported.
-  virtual bool SetWindowButtonVisibility(bool visible);
 
   // Toggle the menu bar.
   virtual void SetAutoHideMenuBar(bool auto_hide);
@@ -226,7 +238,7 @@ class NativeWindow : public base::SupportsUserData,
                            const std::string& display_name);
   virtual void CloseFilePreview();
 
-  virtual void SetGTKDarkThemeEnabled(bool use_dark_theme) = 0;
+  virtual void SetGTKDarkThemeEnabled(bool use_dark_theme) {}
 
   // Converts between content bounds and window bounds.
   virtual gfx::Rect ContentBoundsToWindowBounds(
@@ -252,6 +264,7 @@ class NativeWindow : public base::SupportsUserData,
   void NotifyWindowBlur();
   void NotifyWindowFocus();
   void NotifyWindowShow();
+  void NotifyWindowIsKeyChanged(bool is_key);
   void NotifyWindowHide();
   void NotifyWindowMaximize();
   void NotifyWindowUnmaximize();
@@ -261,6 +274,7 @@ class NativeWindow : public base::SupportsUserData,
   void NotifyWindowWillResize(const gfx::Rect& new_bounds,
                               bool* prevent_default);
   void NotifyWindowResize();
+  void NotifyWindowResized();
   void NotifyWindowWillMove(const gfx::Rect& new_bounds, bool* prevent_default);
   void NotifyWindowMoved();
   void NotifyWindowScrollTouchBegin();
@@ -269,8 +283,8 @@ class NativeWindow : public base::SupportsUserData,
   void NotifyWindowRotateGesture(float rotation);
   void NotifyWindowSheetBegin();
   void NotifyWindowSheetEnd();
-  void NotifyWindowEnterFullScreen();
-  void NotifyWindowLeaveFullScreen();
+  virtual void NotifyWindowEnterFullScreen();
+  virtual void NotifyWindowLeaveFullScreen();
   void NotifyWindowEnterHtmlFullScreen();
   void NotifyWindowLeaveHtmlFullScreen();
   void NotifyWindowAlwaysOnTopChanged();
@@ -278,6 +292,7 @@ class NativeWindow : public base::SupportsUserData,
   void NotifyTouchBarItemInteraction(const std::string& item_id,
                                      const base::DictionaryValue& details);
   void NotifyNewWindowForTab();
+  void NotifyWindowSystemContextMenu(int x, int y, bool* prevent_default);
 
 #if defined(OS_WIN)
   void NotifyWindowMessage(UINT message, WPARAM w_param, LPARAM l_param);
@@ -302,6 +317,8 @@ class NativeWindow : public base::SupportsUserData,
 
   std::list<NativeBrowserView*> browser_views() const { return browser_views_; }
 
+  int32_t window_id() const { return next_id_; }
+
  protected:
   NativeWindow(const gin_helper::Dictionary& options, NativeWindow* parent);
 
@@ -322,6 +339,8 @@ class NativeWindow : public base::SupportsUserData,
 
  private:
   std::unique_ptr<views::Widget> widget_;
+
+  static int32_t next_id_;
 
   // The content view, weak ref.
   views::View* content_view_ = nullptr;
@@ -366,7 +385,7 @@ class NativeWindow : public base::SupportsUserData,
   // Accessible title.
   base::string16 accessible_title_;
 
-  base::WeakPtrFactory<NativeWindow> weak_factory_;
+  base::WeakPtrFactory<NativeWindow> weak_factory_{this};
 
   DISALLOW_COPY_AND_ASSIGN(NativeWindow);
 };

@@ -11,8 +11,10 @@
 
 #include "base/strings/stringprintf.h"
 #include "base/task/post_task.h"
+#include "base/task/thread_pool.h"
 #include "content/public/browser/file_url_loader.h"
-#include "mojo/public/cpp/bindings/strong_binding.h"
+#include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/data_pipe_producer.h"
 #include "mojo/public/cpp/system/file_data_source.h"
 #include "net/base/filename_util.h"
@@ -20,7 +22,7 @@
 #include "net/base/mime_util.h"
 #include "net/http/http_byte_range.h"
 #include "net/http/http_util.h"
-#include "services/network/public/cpp/resource_response.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "shell/common/asar/archive.h"
 #include "shell/common/asar/asar_util.h"
 
@@ -59,58 +61,64 @@ class AsarURLLoader : public network::mojom::URLLoader {
   static void CreateAndStart(
       const network::ResourceRequest& request,
       network::mojom::URLLoaderRequest loader,
-      network::mojom::URLLoaderClientPtrInfo client_info,
+      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
       scoped_refptr<net::HttpResponseHeaders> extra_response_headers) {
     // Owns itself. Will live as long as its URLLoader and URLLoaderClientPtr
     // bindings are alive - essentially until either the client gives up or all
     // file data has been sent to it.
     auto* asar_url_loader = new AsarURLLoader;
-    asar_url_loader->Start(request, std::move(loader), std::move(client_info),
+    asar_url_loader->Start(request, std::move(loader), std::move(client),
                            std::move(extra_response_headers));
   }
 
   // network::mojom::URLLoader:
-  void FollowRedirect(const std::vector<std::string>& removed_headers,
-                      const net::HttpRequestHeaders& modified_headers,
-                      const base::Optional<GURL>& new_url) override {}
+  void FollowRedirect(
+      const std::vector<std::string>& removed_headers,
+      const net::HttpRequestHeaders& modified_headers,
+      const net::HttpRequestHeaders& modified_cors_exempt_headers,
+      const base::Optional<GURL>& new_url) override {}
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override {}
   void PauseReadingBodyFromNet() override {}
   void ResumeReadingBodyFromNet() override {}
 
  private:
-  AsarURLLoader() : binding_(this) {}
+  AsarURLLoader() {}
   ~AsarURLLoader() override = default;
 
   void Start(const network::ResourceRequest& request,
-             network::mojom::URLLoaderRequest loader,
-             network::mojom::URLLoaderClientPtrInfo client_info,
+             mojo::PendingReceiver<network::mojom::URLLoader> loader,
+             mojo::PendingRemote<network::mojom::URLLoaderClient> client,
              scoped_refptr<net::HttpResponseHeaders> extra_response_headers) {
-    network::ResourceResponseHead head;
-    head.request_start = base::TimeTicks::Now();
-    head.response_start = base::TimeTicks::Now();
-    head.headers = extra_response_headers;
-    binding_.Bind(std::move(loader));
-    binding_.set_connection_error_handler(base::BindOnce(
-        &AsarURLLoader::OnConnectionError, base::Unretained(this)));
-
-    client_.Bind(std::move(client_info));
+    auto head = network::mojom::URLResponseHead::New();
+    head->request_start = base::TimeTicks::Now();
+    head->response_start = base::TimeTicks::Now();
+    head->headers = extra_response_headers;
 
     base::FilePath path;
     if (!net::FileURLToFilePath(request.url, &path)) {
-      OnClientComplete(net::ERR_FAILED);
+      mojo::Remote<network::mojom::URLLoaderClient> client_remote(
+          std::move(client));
+      client_remote->OnComplete(
+          network::URLLoaderCompletionStatus(net::ERR_FAILED));
+      MaybeDeleteSelf();
       return;
     }
 
     // Determine whether it is an asar file.
     base::FilePath asar_path, relative_path;
     if (!GetAsarArchivePath(path, &asar_path, &relative_path)) {
-      content::CreateFileURLLoader(request, std::move(loader),
-                                   std::move(client_), nullptr, false,
-                                   extra_response_headers);
+      content::CreateFileURLLoaderBypassingSecurityChecks(
+          request, std::move(loader), std::move(client), nullptr, false,
+          extra_response_headers);
       MaybeDeleteSelf();
       return;
     }
+
+    client_.Bind(std::move(client));
+    receiver_.Bind(std::move(loader));
+    receiver_.set_disconnect_handler(base::BindOnce(
+        &AsarURLLoader::OnConnectionError, base::Unretained(this)));
 
     // Parse asar archive.
     std::shared_ptr<Archive> archive = GetOrCreateAsarArchive(asar_path);
@@ -127,8 +135,10 @@ class AsarURLLoader : public network::mojom::URLLoader {
       info.offset = 0;
     }
 
-    mojo::DataPipe pipe(kDefaultFileUrlPipeSize);
-    if (!pipe.consumer_handle.is_valid()) {
+    mojo::ScopedDataPipeProducerHandle producer_handle;
+    mojo::ScopedDataPipeConsumerHandle consumer_handle;
+    if (mojo::CreateDataPipe(kDefaultFileUrlPipeSize, producer_handle,
+                             consumer_handle) != MOJO_RESULT_OK) {
       OnClientComplete(net::ERR_FAILED);
       return;
     }
@@ -183,7 +193,7 @@ class AsarURLLoader : public network::mojom::URLLoader {
 
     total_bytes_written_ = total_bytes_to_send;
 
-    head.content_length = base::saturated_cast<int64_t>(total_bytes_to_send);
+    head->content_length = base::saturated_cast<int64_t>(total_bytes_to_send);
 
     if (first_byte_to_send < read_result.bytes_read) {
       // Write any data we read for MIME sniffing, constraining by range where
@@ -193,9 +203,9 @@ class AsarURLLoader : public network::mojom::URLLoader {
           static_cast<uint32_t>(read_result.bytes_read - first_byte_to_send),
           static_cast<uint32_t>(total_bytes_to_send));
       const uint32_t expected_write_size = write_size;
-      MojoResult result = pipe.producer_handle->WriteData(
-          &initial_read_buffer[first_byte_to_send], &write_size,
-          MOJO_WRITE_DATA_FLAG_NONE);
+      MojoResult result =
+          producer_handle->WriteData(&initial_read_buffer[first_byte_to_send],
+                                     &write_size, MOJO_WRITE_DATA_FLAG_NONE);
       if (result != MOJO_RESULT_OK || write_size != expected_write_size) {
         OnFileWritten(result);
         return;
@@ -206,21 +216,21 @@ class AsarURLLoader : public network::mojom::URLLoader {
       total_bytes_to_send -= write_size;
     }
 
-    if (!net::GetMimeTypeFromFile(path, &head.mime_type)) {
+    if (!net::GetMimeTypeFromFile(path, &head->mime_type)) {
       std::string new_type;
-      net::SniffMimeType(initial_read_buffer.data(), read_result.bytes_read,
-                         request.url, head.mime_type,
-                         net::ForceSniffFileUrlsForHtml::kDisabled, &new_type);
-      head.mime_type.assign(new_type);
-      head.did_mime_sniff = true;
+      net::SniffMimeType(
+          base::StringPiece(initial_read_buffer.data(), read_result.bytes_read),
+          request.url, head->mime_type,
+          net::ForceSniffFileUrlsForHtml::kDisabled, &new_type);
+      head->mime_type.assign(new_type);
+      head->did_mime_sniff = true;
     }
-    if (head.headers) {
-      head.headers->AddHeader(
-          base::StringPrintf("%s: %s", net::HttpRequestHeaders::kContentType,
-                             head.mime_type.c_str()));
+    if (head->headers) {
+      head->headers->AddHeader(net::HttpRequestHeaders::kContentType,
+                               head->mime_type.c_str());
     }
-    client_->OnReceiveResponse(head);
-    client_->OnStartLoadingResponseBody(std::move(pipe.consumer_handle));
+    client_->OnReceiveResponse(std::move(head));
+    client_->OnStartLoadingResponseBody(std::move(consumer_handle));
 
     if (total_bytes_to_send == 0) {
       // There's definitely no more data, so we're already done.
@@ -237,15 +247,15 @@ class AsarURLLoader : public network::mojom::URLLoader {
         first_byte_to_send + info.offset,
         first_byte_to_send + info.offset + total_bytes_to_send);
 
-    data_producer_ = std::make_unique<mojo::DataPipeProducer>(
-        std::move(pipe.producer_handle));
+    data_producer_ =
+        std::make_unique<mojo::DataPipeProducer>(std::move(producer_handle));
     data_producer_->Write(
         std::move(file_data_source),
         base::BindOnce(&AsarURLLoader::OnFileWritten, base::Unretained(this)));
   }
 
   void OnConnectionError() {
-    binding_.Close();
+    receiver_.reset();
     MaybeDeleteSelf();
   }
 
@@ -256,7 +266,7 @@ class AsarURLLoader : public network::mojom::URLLoader {
   }
 
   void MaybeDeleteSelf() {
-    if (!binding_.is_bound() && !client_.is_bound())
+    if (!receiver_.is_bound() && !client_.is_bound())
       delete this;
   }
 
@@ -279,8 +289,8 @@ class AsarURLLoader : public network::mojom::URLLoader {
   }
 
   std::unique_ptr<mojo::DataPipeProducer> data_producer_;
-  mojo::Binding<network::mojom::URLLoader> binding_;
-  network::mojom::URLLoaderClientPtr client_;
+  mojo::Receiver<network::mojom::URLLoader> receiver_{this};
+  mojo::Remote<network::mojom::URLLoaderClient> client_;
 
   // In case of successful loads, this holds the total number of bytes written
   // to the response (this may be smaller than the total size of the file when
@@ -297,15 +307,15 @@ class AsarURLLoader : public network::mojom::URLLoader {
 void CreateAsarURLLoader(
     const network::ResourceRequest& request,
     network::mojom::URLLoaderRequest loader,
-    network::mojom::URLLoaderClientPtr client,
+    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
     scoped_refptr<net::HttpResponseHeaders> extra_response_headers) {
-  auto task_runner = base::CreateSequencedTaskRunner(
-      {base::ThreadPool(), base::MayBlock(), base::TaskPriority::USER_VISIBLE,
+  auto task_runner = base::ThreadPool::CreateSequencedTaskRunner(
+      {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
        base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
   task_runner->PostTask(
-      FROM_HERE, base::BindOnce(&AsarURLLoader::CreateAndStart, request,
-                                std::move(loader), client.PassInterface(),
-                                std::move(extra_response_headers)));
+      FROM_HERE,
+      base::BindOnce(&AsarURLLoader::CreateAndStart, request, std::move(loader),
+                     std::move(client), std::move(extra_response_headers)));
 }
 
 }  // namespace asar

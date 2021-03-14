@@ -4,6 +4,7 @@
 
 #include "shell/browser/browser.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -14,13 +15,18 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/sys_string_conversions.h"
 #include "net/base/mac/url_conversions.h"
-#include "shell/browser/mac/atom_application.h"
-#include "shell/browser/mac/atom_application_delegate.h"
+#include "shell/browser/badging/badge_manager.h"
 #include "shell/browser/mac/dict_util.h"
+#include "shell/browser/mac/electron_application.h"
+#include "shell/browser/mac/electron_application_delegate.h"
 #include "shell/browser/native_window.h"
 #include "shell/browser/window_list.h"
+#include "shell/common/api/electron_api_native_image.h"
 #include "shell/common/application_info.h"
+#include "shell/common/gin_converters/image_converter.h"
 #include "shell/common/gin_helper/arguments.h"
+#include "shell/common/gin_helper/dictionary.h"
+#include "shell/common/gin_helper/error_thrower.h"
 #include "shell/common/gin_helper/promise.h"
 #include "shell/common/platform_util.h"
 #include "ui/gfx/image/image.h"
@@ -28,12 +34,83 @@
 
 namespace electron {
 
+namespace {
+
+NSString* GetAppPathForProtocol(const GURL& url) {
+  NSURL* ns_url = [NSURL
+      URLWithString:base::SysUTF8ToNSString(url.possibly_invalid_spec())];
+  base::ScopedCFTypeRef<CFErrorRef> out_err;
+
+  base::ScopedCFTypeRef<CFURLRef> openingApp(LSCopyDefaultApplicationURLForURL(
+      (CFURLRef)ns_url, kLSRolesAll, out_err.InitializeInto()));
+
+  if (out_err) {
+    // likely kLSApplicationNotFoundErr
+    return nullptr;
+  }
+  NSString* app_path = [base::mac::CFToNSCast(openingApp.get()) path];
+  return app_path;
+}
+
+gfx::Image GetApplicationIconForProtocol(NSString* _Nonnull app_path) {
+  NSImage* image = [[NSWorkspace sharedWorkspace] iconForFile:app_path];
+  gfx::Image icon(image);
+  return icon;
+}
+
+base::string16 GetAppDisplayNameForProtocol(NSString* app_path) {
+  NSString* app_display_name =
+      [[NSFileManager defaultManager] displayNameAtPath:app_path];
+  return base::SysNSStringToUTF16(app_display_name);
+}
+
+}  // namespace
+
+v8::Local<v8::Promise> Browser::GetApplicationInfoForProtocol(
+    v8::Isolate* isolate,
+    const GURL& url) {
+  gin_helper::Promise<gin_helper::Dictionary> promise(isolate);
+  v8::Local<v8::Promise> handle = promise.GetHandle();
+  gin_helper::Dictionary dict = gin::Dictionary::CreateEmpty(isolate);
+
+  NSString* ns_app_path = GetAppPathForProtocol(url);
+
+  if (!ns_app_path) {
+    promise.RejectWithErrorMessage(
+        "Unable to retrieve installation path to app");
+    return handle;
+  }
+
+  base::string16 app_path = base::SysNSStringToUTF16(ns_app_path);
+  base::string16 app_display_name = GetAppDisplayNameForProtocol(ns_app_path);
+  gfx::Image app_icon = GetApplicationIconForProtocol(ns_app_path);
+
+  dict.Set("name", app_display_name);
+  dict.Set("path", app_path);
+  dict.Set("icon", app_icon);
+
+  promise.Resolve(dict);
+  return handle;
+}
+
 void Browser::SetShutdownHandler(base::Callback<bool()> handler) {
   [[AtomApplication sharedApplication] setShutdownHandler:std::move(handler)];
 }
 
-void Browser::Focus() {
-  [[AtomApplication sharedApplication] activateIgnoringOtherApps:NO];
+void Browser::Focus(gin::Arguments* args) {
+  gin_helper::Dictionary opts;
+  bool steal_focus = false;
+
+  if (args->GetNext(&opts)) {
+    gin_helper::ErrorThrower thrower(args->isolate());
+    if (!opts.Get("steal", &steal_focus)) {
+      thrower.ThrowError(
+          "Expected options object to contain a 'steal' boolean property");
+      return;
+    }
+  }
+
+  [[AtomApplication sharedApplication] activateIgnoringOtherApps:steal_focus];
 }
 
 void Browser::Hide() {
@@ -59,7 +136,7 @@ void Browser::ClearRecentDocuments() {
 }
 
 bool Browser::RemoveAsDefaultProtocolClient(const std::string& protocol,
-                                            gin_helper::Arguments* args) {
+                                            gin::Arguments* args) {
   NSString* identifier = [base::mac::MainBundle() bundleIdentifier];
   if (!identifier)
     return false;
@@ -94,7 +171,7 @@ bool Browser::RemoveAsDefaultProtocolClient(const std::string& protocol,
 }
 
 bool Browser::SetAsDefaultProtocolClient(const std::string& protocol,
-                                         gin_helper::Arguments* args) {
+                                         gin::Arguments* args) {
   if (protocol.empty())
     return false;
 
@@ -109,7 +186,7 @@ bool Browser::SetAsDefaultProtocolClient(const std::string& protocol,
 }
 
 bool Browser::IsDefaultProtocolClient(const std::string& protocol,
-                                      gin_helper::Arguments* args) {
+                                      gin::Arguments* args) {
   if (protocol.empty())
     return false;
 
@@ -132,17 +209,32 @@ bool Browser::IsDefaultProtocolClient(const std::string& protocol,
   return result == NSOrderedSame;
 }
 
+base::string16 Browser::GetApplicationNameForProtocol(const GURL& url) {
+  NSString* app_path = GetAppPathForProtocol(url);
+  if (!app_path) {
+    return base::string16();
+  }
+  base::string16 app_display_name = GetAppDisplayNameForProtocol(app_path);
+  return app_display_name;
+}
+
 void Browser::SetAppUserModelID(const base::string16& name) {}
 
-bool Browser::SetBadgeCount(int count) {
-  DockSetBadgeText(count != 0 ? base::NumberToString(count) : "");
-  badge_count_ = count;
+bool Browser::SetBadgeCount(base::Optional<int> count) {
+  DockSetBadgeText(!count.has_value() || count.value() != 0
+                       ? badging::BadgeManager::GetBadgeString(count)
+                       : "");
+  if (count.has_value()) {
+    badge_count_ = count.value();
+  } else {
+    badge_count_ = 0;
+  }
   return true;
 }
 
 void Browser::SetUserActivity(const std::string& type,
                               base::DictionaryValue user_info,
-                              gin_helper::Arguments* args) {
+                              gin::Arguments* args) {
   std::string url_string;
   args->GetNext(&url_string);
 
@@ -224,6 +316,8 @@ Browser::LoginItemSettings Browser::GetLoginItemSettings(
 }
 
 void RemoveFromLoginItems() {
+#pragma clang diagnostic push  // https://crbug.com/1154377
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   // logic to find the login item copied from GetLoginItemForApp in
   // base/mac/mac_util.mm
   base::ScopedCFTypeRef<LSSharedFileListRef> login_items(
@@ -249,6 +343,7 @@ void RemoveFromLoginItems() {
       }
     }
   }
+#pragma clang diagnostic pop
 }
 
 void Browser::SetLoginItemSettings(LoginItemSettings settings) {
@@ -299,6 +394,20 @@ std::string Browser::DockGetBadgeText() {
 }
 
 void Browser::DockHide() {
+  // Transforming application state from UIElement to Foreground is an
+  // asyncronous operation, and unfortunately there is currently no way to know
+  // when it is finished.
+  // So if we call DockHide => DockShow => DockHide => DockShow in a very short
+  // time, we would triger a bug of macOS that, there would be multiple dock
+  // icons of the app left in system.
+  // To work around this, we make sure DockHide does nothing if it is called
+  // immediately after DockShow. After some experiments, 1 second seems to be
+  // a proper interval.
+  if (!last_dock_show_.is_null() &&
+      base::Time::Now() - last_dock_show_ < base::TimeDelta::FromSeconds(1)) {
+    return;
+  }
+
   for (auto* const& window : WindowList::GetWindows())
     [window->GetNativeWindow().GetNativeNSWindow() setCanHide:NO];
 
@@ -314,6 +423,7 @@ bool Browser::DockIsVisible() {
 }
 
 v8::Local<v8::Promise> Browser::DockShow(v8::Isolate* isolate) {
+  last_dock_show_ = base::Time::Now();
   gin_helper::Promise<void> promise(isolate);
   v8::Local<v8::Promise> handle = promise.GetHandle();
 
@@ -346,13 +456,22 @@ v8::Local<v8::Promise> Browser::DockShow(v8::Isolate* isolate) {
   return handle;
 }
 
-void Browser::DockSetMenu(AtomMenuModel* model) {
-  AtomApplicationDelegate* delegate =
-      (AtomApplicationDelegate*)[NSApp delegate];
+void Browser::DockSetMenu(ElectronMenuModel* model) {
+  ElectronApplicationDelegate* delegate =
+      (ElectronApplicationDelegate*)[NSApp delegate];
   [delegate setApplicationDockMenu:model];
 }
 
-void Browser::DockSetIcon(const gfx::Image& image) {
+void Browser::DockSetIcon(v8::Isolate* isolate, v8::Local<v8::Value> icon) {
+  gfx::Image image;
+
+  if (!icon->IsNull()) {
+    api::NativeImage* native_image = nullptr;
+    if (!api::NativeImage::TryConvertNativeImage(isolate, icon, &native_image))
+      return;
+    image = native_image->image();
+  }
+
   [[AtomApplication sharedApplication]
       setApplicationIconImage:image.AsNSImage()];
 }
@@ -361,11 +480,18 @@ void Browser::ShowAboutPanel() {
   NSDictionary* options = DictionaryValueToNSDictionary(about_panel_options_);
 
   // Credits must be a NSAttributedString instead of NSString
-  id credits = options[@"Credits"];
+  NSString* credits = (NSString*)options[@"Credits"];
   if (credits != nil) {
-    NSMutableDictionary* mutable_options = [options mutableCopy];
-    mutable_options[@"Credits"] = [[[NSAttributedString alloc]
-        initWithString:(NSString*)credits] autorelease];
+    base::scoped_nsobject<NSMutableDictionary> mutable_options(
+        [options mutableCopy]);
+    base::scoped_nsobject<NSAttributedString> creditString(
+        [[NSAttributedString alloc]
+            initWithString:credits
+                attributes:@{
+                  NSForegroundColorAttributeName : [NSColor textColor]
+                }]);
+
+    [mutable_options setValue:creditString forKey:@"Credits"];
     options = [NSDictionary dictionaryWithDictionary:mutable_options];
   }
 
@@ -391,6 +517,19 @@ void Browser::ShowEmojiPanel() {
 
 bool Browser::IsEmojiPanelSupported() {
   return true;
+}
+
+bool Browser::IsSecureKeyboardEntryEnabled() {
+  return password_input_enabler_.get() != nullptr;
+}
+
+void Browser::SetSecureKeyboardEntryEnabled(bool enabled) {
+  if (enabled) {
+    password_input_enabler_ =
+        std::make_unique<ui::ScopedPasswordInputEnabler>();
+  } else {
+    password_input_enabler_.reset();
+  }
 }
 
 }  // namespace electron

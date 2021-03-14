@@ -12,18 +12,20 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "gin/converter.h"
-#include "mojo/public/cpp/base/values_mojom_traits.h"
-#include "mojo/public/mojom/base/values.mojom.h"
-#include "shell/common/deprecate_util.h"
+#include "shell/common/gin_converters/gfx_converter.h"
 #include "shell/common/gin_converters/value_converter.h"
 #include "shell/common/gin_helper/dictionary.h"
 #include "shell/common/keyboard_util.h"
-#include "third_party/blink/public/platform/web_input_event.h"
-#include "third_party/blink/public/platform/web_keyboard_event.h"
-#include "third_party/blink/public/platform/web_mouse_event.h"
-#include "third_party/blink/public/platform/web_mouse_wheel_event.h"
-#include "third_party/blink/public/web/web_device_emulation_params.h"
+#include "shell/common/v8_value_serializer.h"
+#include "third_party/blink/public/common/context_menu_data/edit_flags.h"
+#include "third_party/blink/public/common/input/web_input_event.h"
+#include "third_party/blink/public/common/input/web_keyboard_event.h"
+#include "third_party/blink/public/common/input/web_mouse_event.h"
+#include "third_party/blink/public/common/input/web_mouse_wheel_event.h"
+#include "third_party/blink/public/common/widget/device_emulation_params.h"
+#include "third_party/blink/public/platform/web_size.h"
 #include "ui/base/clipboard/clipboard.h"
+#include "ui/events/blink/blink_event_util.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/events/keycodes/keyboard_code_conversion.h"
 
@@ -61,33 +63,33 @@ struct Converter<blink::WebInputEvent::Type> {
                      blink::WebInputEvent::Type* out) {
     std::string type = base::ToLowerASCII(gin::V8ToString(isolate, val));
     if (type == "mousedown")
-      *out = blink::WebInputEvent::kMouseDown;
+      *out = blink::WebInputEvent::Type::kMouseDown;
     else if (type == "mouseup")
-      *out = blink::WebInputEvent::kMouseUp;
+      *out = blink::WebInputEvent::Type::kMouseUp;
     else if (type == "mousemove")
-      *out = blink::WebInputEvent::kMouseMove;
+      *out = blink::WebInputEvent::Type::kMouseMove;
     else if (type == "mouseenter")
-      *out = blink::WebInputEvent::kMouseEnter;
+      *out = blink::WebInputEvent::Type::kMouseEnter;
     else if (type == "mouseleave")
-      *out = blink::WebInputEvent::kMouseLeave;
+      *out = blink::WebInputEvent::Type::kMouseLeave;
     else if (type == "contextmenu")
-      *out = blink::WebInputEvent::kContextMenu;
+      *out = blink::WebInputEvent::Type::kContextMenu;
     else if (type == "mousewheel")
-      *out = blink::WebInputEvent::kMouseWheel;
+      *out = blink::WebInputEvent::Type::kMouseWheel;
     else if (type == "keydown")
-      *out = blink::WebInputEvent::kRawKeyDown;
+      *out = blink::WebInputEvent::Type::kRawKeyDown;
     else if (type == "keyup")
-      *out = blink::WebInputEvent::kKeyUp;
+      *out = blink::WebInputEvent::Type::kKeyUp;
     else if (type == "char")
-      *out = blink::WebInputEvent::kChar;
+      *out = blink::WebInputEvent::Type::kChar;
     else if (type == "touchstart")
-      *out = blink::WebInputEvent::kTouchStart;
+      *out = blink::WebInputEvent::Type::kTouchStart;
     else if (type == "touchmove")
-      *out = blink::WebInputEvent::kTouchMove;
+      *out = blink::WebInputEvent::Type::kTouchMove;
     else if (type == "touchend")
-      *out = blink::WebInputEvent::kTouchEnd;
+      *out = blink::WebInputEvent::Type::kTouchEnd;
     else if (type == "touchcancel")
-      *out = blink::WebInputEvent::kTouchCancel;
+      *out = blink::WebInputEvent::Type::kTouchCancel;
     return true;
   }
 };
@@ -117,38 +119,38 @@ struct Converter<blink::WebInputEvent::Modifiers> {
                      blink::WebInputEvent::Modifiers* out) {
     std::string modifier = base::ToLowerASCII(gin::V8ToString(isolate, val));
     if (modifier == "shift")
-      *out = blink::WebInputEvent::kShiftKey;
+      *out = blink::WebInputEvent::Modifiers::kShiftKey;
     else if (modifier == "control" || modifier == "ctrl")
-      *out = blink::WebInputEvent::kControlKey;
+      *out = blink::WebInputEvent::Modifiers::kControlKey;
     else if (modifier == "alt")
-      *out = blink::WebInputEvent::kAltKey;
+      *out = blink::WebInputEvent::Modifiers::kAltKey;
     else if (modifier == "meta" || modifier == "command" || modifier == "cmd")
-      *out = blink::WebInputEvent::kMetaKey;
+      *out = blink::WebInputEvent::Modifiers::kMetaKey;
     else if (modifier == "iskeypad")
-      *out = blink::WebInputEvent::kIsKeyPad;
+      *out = blink::WebInputEvent::Modifiers::kIsKeyPad;
     else if (modifier == "isautorepeat")
-      *out = blink::WebInputEvent::kIsAutoRepeat;
+      *out = blink::WebInputEvent::Modifiers::kIsAutoRepeat;
     else if (modifier == "leftbuttondown")
-      *out = blink::WebInputEvent::kLeftButtonDown;
+      *out = blink::WebInputEvent::Modifiers::kLeftButtonDown;
     else if (modifier == "middlebuttondown")
-      *out = blink::WebInputEvent::kMiddleButtonDown;
+      *out = blink::WebInputEvent::Modifiers::kMiddleButtonDown;
     else if (modifier == "rightbuttondown")
-      *out = blink::WebInputEvent::kRightButtonDown;
+      *out = blink::WebInputEvent::Modifiers::kRightButtonDown;
     else if (modifier == "capslock")
-      *out = blink::WebInputEvent::kCapsLockOn;
+      *out = blink::WebInputEvent::Modifiers::kCapsLockOn;
     else if (modifier == "numlock")
-      *out = blink::WebInputEvent::kNumLockOn;
+      *out = blink::WebInputEvent::Modifiers::kNumLockOn;
     else if (modifier == "left")
-      *out = blink::WebInputEvent::kIsLeft;
+      *out = blink::WebInputEvent::Modifiers::kIsLeft;
     else if (modifier == "right")
-      *out = blink::WebInputEvent::kIsRight;
+      *out = blink::WebInputEvent::Modifiers::kIsRight;
     return true;
   }
 };
 
 blink::WebInputEvent::Type GetWebInputEventType(v8::Isolate* isolate,
                                                 v8::Local<v8::Value> val) {
-  blink::WebInputEvent::Type type = blink::WebInputEvent::kUndefined;
+  blink::WebInputEvent::Type type = blink::WebInputEvent::Type::kUndefined;
   gin_helper::Dictionary dict;
   ConvertFromV8(isolate, val, &dict) && dict.Get("type", &type);
   return type;
@@ -188,27 +190,28 @@ bool Converter<blink::WebKeyboardEvent>::FromV8(v8::Isolate* isolate,
   ui::KeyboardCode keyCode = electron::KeyboardCodeFromStr(str, &shifted);
   out->windows_key_code = keyCode;
   if (shifted)
-    out->SetModifiers(out->GetModifiers() | blink::WebInputEvent::kShiftKey);
+    out->SetModifiers(out->GetModifiers() |
+                      blink::WebInputEvent::Modifiers::kShiftKey);
 
   ui::DomCode domCode = ui::UsLayoutKeyboardCodeToDomCode(keyCode);
   out->dom_code = static_cast<int>(domCode);
 
   ui::DomKey domKey;
   ui::KeyboardCode dummy_code;
-  int flags = electron::WebEventModifiersToEventFlags(out->GetModifiers());
+  int flags = ui::WebEventModifiersToEventFlags(out->GetModifiers());
   if (ui::DomCodeToUsLayoutDomKey(domCode, flags, &domKey, &dummy_code))
     out->dom_key = static_cast<int>(domKey);
 
-  if ((out->GetType() == blink::WebInputEvent::kChar ||
-       out->GetType() == blink::WebInputEvent::kRawKeyDown)) {
+  if ((out->GetType() == blink::WebInputEvent::Type::kChar ||
+       out->GetType() == blink::WebInputEvent::Type::kRawKeyDown)) {
     // Make sure to not read beyond the buffer in case some bad code doesn't
     // NULL-terminate it (this is called from plugins).
     size_t text_length_cap = blink::WebKeyboardEvent::kTextLengthCap;
     base::string16 text16 = base::UTF8ToUTF16(str);
 
-    memset(out->text, 0, text_length_cap);
-    memset(out->unmodified_text, 0, text_length_cap);
-    for (size_t i = 0; i < std::min(text_length_cap, text16.size()); ++i) {
+    std::fill_n(out->text, text_length_cap, 0);
+    std::fill_n(out->unmodified_text, text_length_cap, 0);
+    for (size_t i = 0; i < std::min(text_length_cap - 1, text16.size()); ++i) {
       out->text[i] = text16[i];
       out->unmodified_text[i] = text16[i];
     }
@@ -265,48 +268,22 @@ bool Converter<blink::WebMouseWheelEvent>::FromV8(
   bool has_precise_scrolling_deltas = false;
   dict.Get("hasPreciseScrollingDeltas", &has_precise_scrolling_deltas);
   if (has_precise_scrolling_deltas) {
-    out->delta_units =
-        ui::input_types::ScrollGranularity::kScrollByPrecisePixel;
+    out->delta_units = ui::ScrollGranularity::kScrollByPrecisePixel;
   } else {
-    out->delta_units = ui::input_types::ScrollGranularity::kScrollByPixel;
+    out->delta_units = ui::ScrollGranularity::kScrollByPixel;
   }
 
 #if defined(USE_AURA)
   // Matches the behavior of ui/events/blink/web_input_event_traits.cc:
   bool can_scroll = true;
   if (dict.Get("canScroll", &can_scroll) && !can_scroll) {
-    out->delta_units = ui::input_types::ScrollGranularity::kScrollByPage;
-    out->SetModifiers(out->GetModifiers() & ~blink::WebInputEvent::kControlKey);
+    out->delta_units = ui::ScrollGranularity::kScrollByPage;
+    out->SetModifiers(out->GetModifiers() &
+                      ~blink::WebInputEvent::Modifiers::kControlKey);
   }
 #endif
   return true;
 }
-
-bool Converter<blink::WebFloatPoint>::FromV8(v8::Isolate* isolate,
-                                             v8::Local<v8::Value> val,
-                                             blink::WebFloatPoint* out) {
-  gin_helper::Dictionary dict;
-  if (!ConvertFromV8(isolate, val, &dict))
-    return false;
-  return dict.Get("x", &out->x) && dict.Get("y", &out->y);
-}
-
-template <>
-struct Converter<base::Optional<blink::WebPoint>> {
-  static bool FromV8(v8::Isolate* isolate,
-                     v8::Local<v8::Value> val,
-                     base::Optional<blink::WebPoint>* out) {
-    gin_helper::Dictionary dict;
-    if (!ConvertFromV8(isolate, val, &dict))
-      return false;
-    blink::WebPoint point;
-    bool success = dict.Get("x", &point.x) && dict.Get("y", &point.y);
-    if (!success)
-      return false;
-    out->emplace(point);
-    return true;
-  }
-};
 
 bool Converter<blink::WebSize>::FromV8(v8::Isolate* isolate,
                                        v8::Local<v8::Value> val,
@@ -317,27 +294,30 @@ bool Converter<blink::WebSize>::FromV8(v8::Isolate* isolate,
   return dict.Get("width", &out->width) && dict.Get("height", &out->height);
 }
 
-bool Converter<blink::WebDeviceEmulationParams>::FromV8(
+bool Converter<blink::DeviceEmulationParams>::FromV8(
     v8::Isolate* isolate,
     v8::Local<v8::Value> val,
-    blink::WebDeviceEmulationParams* out) {
+    blink::DeviceEmulationParams* out) {
   gin_helper::Dictionary dict;
   if (!ConvertFromV8(isolate, val, &dict))
     return false;
 
-  std::string screen_position;
-  if (dict.Get("screenPosition", &screen_position)) {
-    screen_position = base::ToLowerASCII(screen_position);
-    if (screen_position == "mobile")
-      out->screen_position = blink::WebDeviceEmulationParams::kMobile;
-    else if (screen_position == "desktop")
-      out->screen_position = blink::WebDeviceEmulationParams::kDesktop;
+  std::string screen_type;
+  if (dict.Get("screenPosition", &screen_type)) {
+    screen_type = base::ToLowerASCII(screen_type);
+    if (screen_type == "mobile")
+      out->screen_type = blink::mojom::EmulatedScreenType::kMobile;
+    else if (screen_type == "desktop")
+      out->screen_type = blink::mojom::EmulatedScreenType::kDesktop;
     else
       return false;
   }
 
   dict.Get("screenSize", &out->screen_size);
-  dict.Get("viewPosition", &out->view_position);
+  gfx::Point view_position;
+  if (dict.Get("viewPosition", &view_position)) {
+    out->view_position = view_position;
+  }
   dict.Get("deviceScaleFactor", &out->device_scale_factor);
   dict.Get("viewSize", &out->view_size);
   dict.Get("scale", &out->scale);
@@ -345,21 +325,21 @@ bool Converter<blink::WebDeviceEmulationParams>::FromV8(
 }
 
 // static
-v8::Local<v8::Value> Converter<blink::WebContextMenuData::MediaType>::ToV8(
+v8::Local<v8::Value> Converter<blink::mojom::ContextMenuDataMediaType>::ToV8(
     v8::Isolate* isolate,
-    const blink::WebContextMenuData::MediaType& in) {
+    const blink::mojom::ContextMenuDataMediaType& in) {
   switch (in) {
-    case blink::WebContextMenuData::kMediaTypeImage:
+    case blink::mojom::ContextMenuDataMediaType::kImage:
       return StringToV8(isolate, "image");
-    case blink::WebContextMenuData::kMediaTypeVideo:
+    case blink::mojom::ContextMenuDataMediaType::kVideo:
       return StringToV8(isolate, "video");
-    case blink::WebContextMenuData::kMediaTypeAudio:
+    case blink::mojom::ContextMenuDataMediaType::kAudio:
       return StringToV8(isolate, "audio");
-    case blink::WebContextMenuData::kMediaTypeCanvas:
+    case blink::mojom::ContextMenuDataMediaType::kCanvas:
       return StringToV8(isolate, "canvas");
-    case blink::WebContextMenuData::kMediaTypeFile:
+    case blink::mojom::ContextMenuDataMediaType::kFile:
       return StringToV8(isolate, "file");
-    case blink::WebContextMenuData::kMediaTypePlugin:
+    case blink::mojom::ContextMenuDataMediaType::kPlugin:
       return StringToV8(isolate, "plugin");
     default:
       return StringToV8(isolate, "none");
@@ -367,15 +347,16 @@ v8::Local<v8::Value> Converter<blink::WebContextMenuData::MediaType>::ToV8(
 }
 
 // static
-v8::Local<v8::Value> Converter<blink::WebContextMenuData::InputFieldType>::ToV8(
+v8::Local<v8::Value>
+Converter<blink::mojom::ContextMenuDataInputFieldType>::ToV8(
     v8::Isolate* isolate,
-    const blink::WebContextMenuData::InputFieldType& in) {
+    const blink::mojom::ContextMenuDataInputFieldType& in) {
   switch (in) {
-    case blink::WebContextMenuData::kInputFieldTypePlainText:
+    case blink::mojom::ContextMenuDataInputFieldType::kPlainText:
       return StringToV8(isolate, "plainText");
-    case blink::WebContextMenuData::kInputFieldTypePassword:
+    case blink::mojom::ContextMenuDataInputFieldType::kPassword:
       return StringToV8(isolate, "password");
-    case blink::WebContextMenuData::kInputFieldTypeOther:
+    case blink::mojom::ContextMenuDataInputFieldType::kOther:
       return StringToV8(isolate, "other");
     default:
       return StringToV8(isolate, "none");
@@ -384,45 +365,53 @@ v8::Local<v8::Value> Converter<blink::WebContextMenuData::InputFieldType>::ToV8(
 
 v8::Local<v8::Value> EditFlagsToV8(v8::Isolate* isolate, int editFlags) {
   gin_helper::Dictionary dict = gin::Dictionary::CreateEmpty(isolate);
-  dict.Set("canUndo", !!(editFlags & blink::WebContextMenuData::kCanUndo));
-  dict.Set("canRedo", !!(editFlags & blink::WebContextMenuData::kCanRedo));
-  dict.Set("canCut", !!(editFlags & blink::WebContextMenuData::kCanCut));
-  dict.Set("canCopy", !!(editFlags & blink::WebContextMenuData::kCanCopy));
+  dict.Set("canUndo",
+           !!(editFlags & blink::ContextMenuDataEditFlags::kCanUndo));
+  dict.Set("canRedo",
+           !!(editFlags & blink::ContextMenuDataEditFlags::kCanRedo));
+  dict.Set("canCut", !!(editFlags & blink::ContextMenuDataEditFlags::kCanCut));
+  dict.Set("canCopy",
+           !!(editFlags & blink::ContextMenuDataEditFlags::kCanCopy));
 
   bool pasteFlag = false;
-  if (editFlags & blink::WebContextMenuData::kCanPaste) {
+  if (editFlags & blink::ContextMenuDataEditFlags::kCanPaste) {
     std::vector<base::string16> types;
-    bool ignore;
     ui::Clipboard::GetForCurrentThread()->ReadAvailableTypes(
-        ui::ClipboardBuffer::kCopyPaste, &types, &ignore);
+        ui::ClipboardBuffer::kCopyPaste, /* data_dst = */ nullptr, &types);
     pasteFlag = !types.empty();
   }
   dict.Set("canPaste", pasteFlag);
 
-  dict.Set("canDelete", !!(editFlags & blink::WebContextMenuData::kCanDelete));
+  dict.Set("canDelete",
+           !!(editFlags & blink::ContextMenuDataEditFlags::kCanDelete));
   dict.Set("canSelectAll",
-           !!(editFlags & blink::WebContextMenuData::kCanSelectAll));
+           !!(editFlags & blink::ContextMenuDataEditFlags::kCanSelectAll));
+  dict.Set("canEditRichly",
+           !!(editFlags & blink::ContextMenuDataEditFlags::kCanEditRichly));
 
   return ConvertToV8(isolate, dict);
 }
 
 v8::Local<v8::Value> MediaFlagsToV8(v8::Isolate* isolate, int mediaFlags) {
   gin_helper::Dictionary dict = gin::Dictionary::CreateEmpty(isolate);
-  dict.Set("inError",
-           !!(mediaFlags & blink::WebContextMenuData::kMediaInError));
-  dict.Set("isPaused",
-           !!(mediaFlags & blink::WebContextMenuData::kMediaPaused));
-  dict.Set("isMuted", !!(mediaFlags & blink::WebContextMenuData::kMediaMuted));
-  dict.Set("hasAudio",
-           !!(mediaFlags & blink::WebContextMenuData::kMediaHasAudio));
-  dict.Set("isLooping",
-           (mediaFlags & blink::WebContextMenuData::kMediaLoop) != 0);
+  dict.Set("inError", !!(mediaFlags & blink::ContextMenuData::kMediaInError));
+  dict.Set("isPaused", !!(mediaFlags & blink::ContextMenuData::kMediaPaused));
+  dict.Set("isMuted", !!(mediaFlags & blink::ContextMenuData::kMediaMuted));
+  dict.Set("canSave", !!(mediaFlags & blink::ContextMenuData::kMediaCanSave));
+  dict.Set("hasAudio", !!(mediaFlags & blink::ContextMenuData::kMediaHasAudio));
+  dict.Set("isLooping", !!(mediaFlags & blink::ContextMenuData::kMediaLoop));
   dict.Set("isControlsVisible",
-           (mediaFlags & blink::WebContextMenuData::kMediaControls) != 0);
+           !!(mediaFlags & blink::ContextMenuData::kMediaControls));
   dict.Set("canToggleControls",
-           !!(mediaFlags & blink::WebContextMenuData::kMediaCanToggleControls));
+           !!(mediaFlags & blink::ContextMenuData::kMediaCanToggleControls));
+  dict.Set("canPrint", !!(mediaFlags & blink::ContextMenuData::kMediaCanPrint));
   dict.Set("canRotate",
-           !!(mediaFlags & blink::WebContextMenuData::kMediaCanRotate));
+           !!(mediaFlags & blink::ContextMenuData::kMediaCanRotate));
+  dict.Set("canShowPictureInPicture",
+           !!(mediaFlags & blink::ContextMenuData::kMediaCanPictureInPicture));
+  dict.Set("isShowingPictureInPicture",
+           !!(mediaFlags & blink::ContextMenuData::kMediaPictureInPicture));
+  dict.Set("canLoop", !!(mediaFlags & blink::ContextMenuData::kMediaCanLoop));
   return ConvertToV8(isolate, dict);
 }
 
@@ -464,8 +453,7 @@ v8::Local<v8::Value> Converter<network::mojom::ReferrerPolicy>::ToV8(
       return StringToV8(isolate, "no-referrer");
     case network::mojom::ReferrerPolicy::kOrigin:
       return StringToV8(isolate, "origin");
-    case network::mojom::ReferrerPolicy::
-        kNoReferrerWhenDowngradeOriginWhenCrossOrigin:
+    case network::mojom::ReferrerPolicy::kStrictOriginWhenCrossOrigin:
       return StringToV8(isolate, "strict-origin-when-cross-origin");
     case network::mojom::ReferrerPolicy::kSameOrigin:
       return StringToV8(isolate, "same-origin");
@@ -493,8 +481,7 @@ bool Converter<network::mojom::ReferrerPolicy>::FromV8(
   else if (policy == "origin")
     *out = network::mojom::ReferrerPolicy::kOrigin;
   else if (policy == "strict-origin-when-cross-origin")
-    *out = network::mojom::ReferrerPolicy::
-        kNoReferrerWhenDowngradeOriginWhenCrossOrigin;
+    *out = network::mojom::ReferrerPolicy::kStrictOriginWhenCrossOrigin;
   else if (policy == "same-origin")
     *out = network::mojom::ReferrerPolicy::kSameOrigin;
   else if (policy == "strict-origin")
@@ -504,184 +491,16 @@ bool Converter<network::mojom::ReferrerPolicy>::FromV8(
   return true;
 }
 
-namespace {
-constexpr uint8_t kNewSerializationTag = 0;
-constexpr uint8_t kOldSerializationTag = 1;
-
-class V8Serializer : public v8::ValueSerializer::Delegate {
- public:
-  explicit V8Serializer(v8::Isolate* isolate,
-                        bool use_old_serialization = false)
-      : isolate_(isolate),
-        serializer_(isolate, this),
-        use_old_serialization_(use_old_serialization) {}
-  ~V8Serializer() override = default;
-
-  bool Serialize(v8::Local<v8::Value> value, blink::CloneableMessage* out) {
-    serializer_.WriteHeader();
-    if (use_old_serialization_) {
-      WriteTag(kOldSerializationTag);
-      if (!WriteBaseValue(value)) {
-        isolate_->ThrowException(
-            StringToV8(isolate_, "An object could not be cloned."));
-        return false;
-      }
-    } else {
-      WriteTag(kNewSerializationTag);
-      bool wrote_value;
-      v8::TryCatch try_catch(isolate_);
-      if (!serializer_.WriteValue(isolate_->GetCurrentContext(), value)
-               .To(&wrote_value)) {
-        try_catch.Reset();
-        if (!V8Serializer(isolate_, true).Serialize(value, out)) {
-          try_catch.ReThrow();
-          return false;
-        }
-        return true;
-      }
-      DCHECK(wrote_value);
-    }
-
-    std::pair<uint8_t*, size_t> buffer = serializer_.Release();
-    DCHECK_EQ(buffer.first, data_.data());
-    out->encoded_message = base::make_span(buffer.first, buffer.second);
-    out->owned_encoded_message = std::move(data_);
-
-    return true;
-  }
-
-  bool WriteBaseValue(v8::Local<v8::Value> object) {
-    node::Environment* env = node::Environment::GetCurrent(isolate_);
-    if (env) {
-      electron::EmitDeprecationWarning(
-          env,
-          "Passing functions, DOM objects and other non-cloneable JavaScript "
-          "objects to IPC methods is deprecated and will throw an exception "
-          "beginning with Electron 9.",
-          "DeprecationWarning");
-    }
-    base::Value value;
-    if (!ConvertFromV8(isolate_, object, &value)) {
-      return false;
-    }
-    mojo::Message message = mojo_base::mojom::Value::SerializeAsMessage(&value);
-
-    serializer_.WriteUint32(message.data_num_bytes());
-    serializer_.WriteRawBytes(message.data(), message.data_num_bytes());
-    return true;
-  }
-
-  void WriteTag(uint8_t tag) { serializer_.WriteRawBytes(&tag, 1); }
-
-  // v8::ValueSerializer::Delegate
-  void* ReallocateBufferMemory(void* old_buffer,
-                               size_t size,
-                               size_t* actual_size) override {
-    DCHECK_EQ(old_buffer, data_.data());
-    data_.resize(size);
-    *actual_size = data_.capacity();
-    return data_.data();
-  }
-
-  void FreeBufferMemory(void* buffer) override {
-    DCHECK_EQ(buffer, data_.data());
-    data_ = {};
-  }
-
-  void ThrowDataCloneError(v8::Local<v8::String> message) override {
-    isolate_->ThrowException(v8::Exception::Error(message));
-  }
-
- private:
-  v8::Isolate* isolate_;
-  std::vector<uint8_t> data_;
-  v8::ValueSerializer serializer_;
-  bool use_old_serialization_;
-};
-
-class V8Deserializer : public v8::ValueDeserializer::Delegate {
- public:
-  V8Deserializer(v8::Isolate* isolate, const blink::CloneableMessage& message)
-      : isolate_(isolate),
-        deserializer_(isolate,
-                      message.encoded_message.data(),
-                      message.encoded_message.size(),
-                      this) {}
-
-  v8::Local<v8::Value> Deserialize() {
-    v8::EscapableHandleScope scope(isolate_);
-    auto context = isolate_->GetCurrentContext();
-    bool read_header;
-    if (!deserializer_.ReadHeader(context).To(&read_header))
-      return v8::Null(isolate_);
-    DCHECK(read_header);
-    uint8_t tag;
-    if (!ReadTag(&tag))
-      return v8::Null(isolate_);
-    switch (tag) {
-      case kNewSerializationTag: {
-        v8::Local<v8::Value> value;
-        if (!deserializer_.ReadValue(context).ToLocal(&value)) {
-          return v8::Null(isolate_);
-        }
-        return scope.Escape(value);
-      }
-      case kOldSerializationTag: {
-        v8::Local<v8::Value> value;
-        if (!ReadBaseValue(&value)) {
-          return v8::Null(isolate_);
-        }
-        return scope.Escape(value);
-      }
-      default:
-        NOTREACHED() << "Invalid tag: " << tag;
-        return v8::Null(isolate_);
-    }
-  }
-
-  bool ReadTag(uint8_t* tag) {
-    const void* tag_bytes;
-    if (!deserializer_.ReadRawBytes(1, &tag_bytes))
-      return false;
-    *tag = *reinterpret_cast<const uint8_t*>(tag_bytes);
-    return true;
-  }
-
-  bool ReadBaseValue(v8::Local<v8::Value>* value) {
-    uint32_t length;
-    const void* data;
-    if (!deserializer_.ReadUint32(&length) ||
-        !deserializer_.ReadRawBytes(length, &data)) {
-      return false;
-    }
-    mojo::Message message(
-        base::make_span(reinterpret_cast<const uint8_t*>(data), length), {});
-    base::Value out;
-    if (!mojo_base::mojom::Value::DeserializeFromMessage(std::move(message),
-                                                         &out)) {
-      return false;
-    }
-    *value = ConvertToV8(isolate_, out);
-    return true;
-  }
-
- private:
-  v8::Isolate* isolate_;
-  v8::ValueDeserializer deserializer_;
-};
-
-}  // namespace
-
 v8::Local<v8::Value> Converter<blink::CloneableMessage>::ToV8(
     v8::Isolate* isolate,
     const blink::CloneableMessage& in) {
-  return V8Deserializer(isolate, in).Deserialize();
+  return electron::DeserializeV8Value(isolate, in);
 }
 
 bool Converter<blink::CloneableMessage>::FromV8(v8::Isolate* isolate,
                                                 v8::Handle<v8::Value> val,
                                                 blink::CloneableMessage* out) {
-  return V8Serializer(isolate).Serialize(val, out);
+  return electron::SerializeV8Value(isolate, val, out);
 }
 
 }  // namespace gin

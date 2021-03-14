@@ -48,7 +48,9 @@ gfx::Size GetExpandedWindowSize(const NativeWindow* window, gfx::Size size) {
 
 NativeWindow::NativeWindow(const gin_helper::Dictionary& options,
                            NativeWindow* parent)
-    : widget_(new views::Widget), parent_(parent), weak_factory_(this) {
+    : widget_(new views::Widget), parent_(parent) {
+  ++next_id_;
+
   options.Get(options::kFrame, &has_frame_);
   options.Get(options::kTransparent, &transparent_);
   options.Get(options::kEnableLargerThanScreen, &enable_larger_than_screen_);
@@ -107,7 +109,7 @@ void NativeWindow::InitFromOptions(const gin_helper::Dictionary& options) {
   } else {
     SetSizeConstraints(size_constraints);
   }
-#if defined(OS_WIN) || defined(USE_X11)
+#if defined(OS_WIN) || defined(OS_LINUX)
   bool resizable;
   if (options.Get(options::kResizable, &resizable)) {
     SetResizable(resizable);
@@ -137,7 +139,7 @@ void NativeWindow::InitFromOptions(const gin_helper::Dictionary& options) {
   bool fullscreen = false;
   if (options.Get(options::kFullscreen, &fullscreen) && !fullscreen) {
     // Disable fullscreen button if 'fullscreen' is specified to false.
-#if defined(OS_MACOSX)
+#if defined(OS_MAC)
     fullscreenable = false;
 #endif
   }
@@ -155,7 +157,7 @@ void NativeWindow::InitFromOptions(const gin_helper::Dictionary& options) {
   if (options.Get(options::kKiosk, &kiosk) && kiosk) {
     SetKiosk(kiosk);
   }
-#if defined(OS_MACOSX)
+#if defined(OS_MAC)
   std::string type;
   if (options.Get(options::kVibrancyType, &type)) {
     SetVibrancy(type);
@@ -308,6 +310,10 @@ double NativeWindow::GetSheetOffsetY() {
   return sheet_offset_y_;
 }
 
+bool NativeWindow::IsTabletMode() const {
+  return false;
+}
+
 void NativeWindow::SetRepresentedFilename(const std::string& filename) {}
 
 std::string NativeWindow::GetRepresentedFilename() {
@@ -322,7 +328,7 @@ bool NativeWindow::IsDocumentEdited() {
 
 void NativeWindow::SetFocusable(bool focusable) {}
 
-void NativeWindow::SetMenu(AtomMenuModel* menu) {}
+void NativeWindow::SetMenu(ElectronMenuModel* menu) {}
 
 void NativeWindow::SetParentWindow(NativeWindow* parent) {
   parent_ = parent;
@@ -344,7 +350,7 @@ bool NativeWindow::AddTabbedWindow(NativeWindow* window) {
   return true;  // for non-Mac platforms
 }
 
-void NativeWindow::SetVibrancy(const std::string& filename) {}
+void NativeWindow::SetVibrancy(const std::string& type) {}
 
 void NativeWindow::SetTouchBar(
     std::vector<gin_helper::PersistentDictionary> items) {}
@@ -364,10 +370,6 @@ void NativeWindow::SetMenuBarVisibility(bool visible) {}
 
 bool NativeWindow::IsMenuBarVisible() {
   return true;
-}
-
-bool NativeWindow::SetWindowButtonVisibility(bool visible) {
-  return false;
 }
 
 double NativeWindow::GetAspectRatio() {
@@ -439,6 +441,11 @@ void NativeWindow::NotifyWindowFocus() {
     observer.OnWindowFocus();
 }
 
+void NativeWindow::NotifyWindowIsKeyChanged(bool is_key) {
+  for (NativeWindowObserver& observer : observers_)
+    observer.OnWindowIsKeyChanged(is_key);
+}
+
 void NativeWindow::NotifyWindowShow() {
   for (NativeWindowObserver& observer : observers_)
     observer.OnWindowShow();
@@ -484,6 +491,11 @@ void NativeWindow::NotifyWindowWillMove(const gfx::Rect& new_bounds,
 void NativeWindow::NotifyWindowResize() {
   for (NativeWindowObserver& observer : observers_)
     observer.OnWindowResize();
+}
+
+void NativeWindow::NotifyWindowResized() {
+  for (NativeWindowObserver& observer : observers_)
+    observer.OnWindowResized();
 }
 
 void NativeWindow::NotifyWindowMove() {
@@ -568,6 +580,13 @@ void NativeWindow::NotifyNewWindowForTab() {
     observer.OnNewWindowForTab();
 }
 
+void NativeWindow::NotifyWindowSystemContextMenu(int x,
+                                                 int y,
+                                                 bool* prevent_default) {
+  for (NativeWindowObserver& observer : observers_)
+    observer.OnSystemContextMenu(x, y, prevent_default);
+}
+
 #if defined(OS_WIN)
 void NativeWindow::NotifyWindowMessage(UINT message,
                                        WPARAM w_param,
@@ -600,6 +619,9 @@ void NativeWindow::SetAccessibleTitle(const std::string& title) {
 std::string NativeWindow::GetAccessibleTitle() {
   return base::UTF16ToUTF8(accessible_title_);
 }
+
+// static
+int32_t NativeWindow::next_id_ = 0;
 
 // static
 void NativeWindowRelay::CreateForWebContents(

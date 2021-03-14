@@ -23,7 +23,7 @@ class InspectableWebContentsViewDelegate;
 
 class InspectableWebContentsView {
  public:
-  InspectableWebContentsView() : delegate_(nullptr) {}
+  InspectableWebContentsView() {}
   virtual ~InspectableWebContentsView() {}
 
   // The delegate manages its own life.
@@ -32,7 +32,7 @@ class InspectableWebContentsView {
   }
   InspectableWebContentsViewDelegate* GetDelegate() const { return delegate_; }
 
-#if defined(TOOLKIT_VIEWS) && !defined(OS_MACOSX)
+#if defined(TOOLKIT_VIEWS) && !defined(OS_MAC)
   // Returns the container control, which has devtools view attached.
   virtual views::View* GetView() = 0;
 
@@ -54,7 +54,7 @@ class InspectableWebContentsView {
   virtual void SetTitle(const base::string16& title) = 0;
 
  private:
-  InspectableWebContentsViewDelegate* delegate_;  // weak references.
+  InspectableWebContentsViewDelegate* delegate_ = nullptr;  // weak references.
 };
 
 }  // namespace electron

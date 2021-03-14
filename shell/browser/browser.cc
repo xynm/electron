@@ -9,22 +9,42 @@
 #include <utility>
 
 #include "base/files/file_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "shell/browser/atom_browser_main_parts.h"
-#include "shell/browser/atom_paths.h"
 #include "shell/browser/browser_observer.h"
+#include "shell/browser/electron_browser_main_parts.h"
 #include "shell/browser/login_handler.h"
 #include "shell/browser/native_window.h"
 #include "shell/browser/window_list.h"
 #include "shell/common/application_info.h"
+#include "shell/common/electron_paths.h"
 #include "shell/common/gin_helper/arguments.h"
 
 namespace electron {
+
+namespace {
+
+// Call |quit| after Chromium is fully started.
+//
+// This is important for quitting immediately in the "ready" event, when
+// certain initialization task may still be pending, and quitting at that time
+// could end up with crash on exit.
+void RunQuitClosure(base::OnceClosure quit) {
+  // On Linux/Windows the "ready" event is emitted in "PreMainMessageLoopRun",
+  // make sure we quit after message loop has run for once.
+  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, std::move(quit));
+}
+
+}  // namespace
+
+#if defined(OS_WIN)
+Browser::LaunchItem::LaunchItem() = default;
+Browser::LaunchItem::~LaunchItem() = default;
+Browser::LaunchItem::LaunchItem(const LaunchItem& other) = default;
+#endif
 
 Browser::LoginItemSettings::LoginItemSettings() = default;
 Browser::LoginItemSettings::~LoginItemSettings() = default;
@@ -41,8 +61,20 @@ Browser::~Browser() {
 
 // static
 Browser* Browser::Get() {
-  return AtomBrowserMainParts::Get()->browser();
+  return ElectronBrowserMainParts::Get()->browser();
 }
+
+#if defined(OS_WIN) || defined(OS_LINUX)
+void Browser::Focus(gin::Arguments* args) {
+  // Focus on the first visible window.
+  for (auto* const window : WindowList::GetWindows()) {
+    if (window->IsVisible()) {
+      window->Focus(true);
+      break;
+    }
+  }
+}
+#endif
 
 void Browser::Quit() {
   if (is_quiting_)
@@ -58,11 +90,11 @@ void Browser::Quit() {
     electron::WindowList::CloseAllWindows();
 }
 
-void Browser::Exit(gin_helper::Arguments* args) {
+void Browser::Exit(gin::Arguments* args) {
   int code = 0;
   args->GetNext(&code);
 
-  if (!AtomBrowserMainParts::Get()->SetExitCode(code)) {
+  if (!ElectronBrowserMainParts::Get()->SetExitCode(code)) {
     // Message loop is not ready, quit directly.
     exit(code);
   } else {
@@ -94,7 +126,7 @@ void Browser::Shutdown() {
     observer.OnQuit();
 
   if (quit_main_message_loop_) {
-    std::move(quit_main_message_loop_).Run();
+    RunQuitClosure(std::move(quit_main_message_loop_));
   } else {
     // There is no message loop available so we are in early stage, wait until
     // the quit_main_message_loop_ is available.
@@ -181,22 +213,21 @@ void Browser::OnAccessibilitySupportChanged() {
     observer.OnAccessibilitySupportChanged();
 }
 
-void Browser::RequestLogin(
-    scoped_refptr<LoginHandler> login_handler,
-    std::unique_ptr<base::DictionaryValue> request_details) {
-  for (BrowserObserver& observer : observers_)
-    observer.OnLogin(login_handler, *(request_details.get()));
-}
-
 void Browser::PreMainMessageLoopRun() {
   for (BrowserObserver& observer : observers_) {
     observer.OnPreMainMessageLoopRun();
   }
 }
 
+void Browser::PreCreateThreads() {
+  for (BrowserObserver& observer : observers_) {
+    observer.OnPreCreateThreads();
+  }
+}
+
 void Browser::SetMainMessageLoopQuitClosure(base::OnceClosure quit_closure) {
   if (is_shutdown_)
-    std::move(quit_closure).Run();
+    RunQuitClosure(std::move(quit_closure));
   else
     quit_main_message_loop_ = std::move(quit_closure);
 }
@@ -243,10 +274,15 @@ void Browser::OnWindowAllClosed() {
   }
 }
 
-#if defined(OS_MACOSX)
+#if defined(OS_MAC)
 void Browser::NewWindowForTab() {
   for (BrowserObserver& observer : observers_)
     observer.OnNewWindowForTab();
+}
+
+void Browser::DidBecomeActive() {
+  for (BrowserObserver& observer : observers_)
+    observer.OnDidBecomeActive();
 }
 #endif
 

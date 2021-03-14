@@ -10,21 +10,21 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
 #include "net/cookies/canonical_cookie.h"
-#include "shell/browser/atom_browser_context.h"
+#include "shell/browser/electron_browser_context.h"
 
 using content::BrowserThread;
 
 namespace electron {
 
-CookieChangeNotifier::CookieChangeNotifier(AtomBrowserContext* browser_context)
+CookieChangeNotifier::CookieChangeNotifier(
+    ElectronBrowserContext* browser_context)
     : browser_context_(browser_context), receiver_(this) {
   StartListening();
 }
 
 CookieChangeNotifier::~CookieChangeNotifier() = default;
 
-std::unique_ptr<
-    base::CallbackList<void(const net::CookieChangeInfo& change)>::Subscription>
+base::CallbackListSubscription
 CookieChangeNotifier::RegisterCookieChangeCallback(
     const base::Callback<void(const net::CookieChangeInfo& change)>& cb) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);

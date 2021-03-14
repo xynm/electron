@@ -20,13 +20,13 @@ class WidgetDelegate;
 
 namespace electron {
 
-class InspectableWebContentsImpl;
+class InspectableWebContents;
 
 class InspectableWebContentsViewViews : public InspectableWebContentsView,
                                         public views::View {
  public:
   explicit InspectableWebContentsViewViews(
-      InspectableWebContentsImpl* inspectable_web_contents_impl);
+      InspectableWebContents* inspectable_web_contents);
   ~InspectableWebContentsViewViews() override;
 
   // InspectableWebContentsView:
@@ -41,7 +41,7 @@ class InspectableWebContentsViewViews : public InspectableWebContentsView,
       const DevToolsContentsResizingStrategy& strategy) override;
   void SetTitle(const base::string16& title) override;
 
-  InspectableWebContentsImpl* inspectable_web_contents() {
+  InspectableWebContents* inspectable_web_contents() {
     return inspectable_web_contents_;
   }
 
@@ -52,16 +52,16 @@ class InspectableWebContentsViewViews : public InspectableWebContentsView,
   void Layout() override;
 
   // Owns us.
-  InspectableWebContentsImpl* inspectable_web_contents_;
+  InspectableWebContents* inspectable_web_contents_;
 
   std::unique_ptr<views::Widget> devtools_window_;
-  views::WebView* devtools_window_web_view_;
-  views::View* contents_web_view_;
-  views::WebView* devtools_web_view_;
+  views::WebView* devtools_window_web_view_ = nullptr;
+  views::View* contents_web_view_ = nullptr;
+  views::WebView* devtools_web_view_ = nullptr;
 
   DevToolsContentsResizingStrategy strategy_;
-  bool devtools_visible_;
-  views::WidgetDelegate* devtools_window_delegate_;
+  bool devtools_visible_ = false;
+  views::WidgetDelegate* devtools_window_delegate_ = nullptr;
   base::string16 title_;
 
   DISALLOW_COPY_AND_ASSIGN(InspectableWebContentsViewViews);
